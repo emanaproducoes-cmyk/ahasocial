@@ -108,6 +108,7 @@ function startListeners(){
   APP.unsubs.push(DB.listen('posts',posts=>{
     LOCAL.set('posts',posts);
     updateBadges();
+    // Re-render current page when data changes (incl. from approval link)
     const pages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
     if(pages.includes(APP.currentPage)) renderPage(APP.currentPage);
   }));
@@ -430,8 +431,8 @@ function kanbanDrop(e,targetColId){
   if(!targetCol)return;
   const post=LOCAL.find('posts',postId);
   const newStatus=targetCol.status||targetColId;
-  LOCAL.update('posts',postId,{status:newStatus});// instant local
-  DB.update('posts',postId,{status:newStatus}).catch(()=>{});// async
+  LOCAL.update('posts',postId,{status:newStatus});
+  DB.update('posts',postId,{status:newStatus}).catch(()=>{});
   updateBadges();
   // Som de click
   try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=800;g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);o.start();o.stop(ctx.currentTime+0.12);}catch{}
@@ -816,6 +817,7 @@ function moveCarouselSlide(idx,dir){
 // ── Modal Agendamento ─────────────────────────────────────────
 function openNewAgendamento(){
   APP.editingId=null;
+  APP._saving=false; // always reset — prevents stuck flag from previous session
   ['ag-title','ag-date','ag-caption','ag-tags'].forEach(id=>sv(id,''));
   sv('ag-platform','ig');sv('ag-status','pending');sv('ag-campaign','');
   const prev=el('ag-file-preview');
@@ -825,7 +827,9 @@ function openNewAgendamento(){
   setText('modalAgendTitulo','📅 Novo Agendamento');openModal('modalAgendamento');
 }
 function openPostEditor(id){
-  const p=LOCAL.find('posts',id);if(!p)return;APP.editingId=id;
+  const p=LOCAL.find('posts',id);if(!p)return;
+  APP.editingId=id;
+  APP._saving=false; // always reset
   sv('ag-title',p.title||'');sv('ag-platform',p.platform||'ig');sv('ag-date',p.date||'');
   sv('ag-campaign',p.campaign||'');sv('ag-caption',p.caption||'');sv('ag-tags',p.tags||'');sv('ag-status',p.status||'pending');
   document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
@@ -879,26 +883,37 @@ function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.cl
 async function saveAgendamento(){
   const title=v('ag-title')?.trim(),platform=v('ag-platform');
   if(!title){toast('Informe o título. ⚠️','warning');return;}
-  // Guard: prevent double-save (any source)
   if(APP._saving){toast('Aguarde...','info');return;}
   APP._saving=true;
-  // Snapshot editingId immediately — prevents race condition where
-  // closeModal or another event nullifies it before DB operations finish
   const editingId=APP.editingId||null;
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
   const fileRaw=v('ag-file-data');
-  let fileUrl=null,fileType='image';
+  let fileUrl=null,fileType='image',videoKey=null,videoName=null,videoType=null;
+
   if(fileRaw){
     if(fileRaw.startsWith('{')){
-      try{const fd=JSON.parse(fileRaw);fileUrl=fd.url||fd.thumb||null;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}
-    }else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){
+      try{
+        const fd=JSON.parse(fileRaw);
+        if(fd.vKey){
+          // Video stored in IndexedDB
+          fileUrl=fd.thumb||null;
+          fileType='video';
+          videoKey=fd.vKey;
+          videoName=fd.name||'video.mp4';
+          videoType=fd.type||'video/mp4';
+        } else {
+          fileUrl=fd.url||fd.thumb||null;
+          fileType=fd.type||'image';
+        }
+      }catch{fileUrl=fileRaw;}
+    } else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){
       fileUrl=fileRaw;
       fileType=fileRaw.startsWith('data:video')?'video':'image';
     }
   }
   if(editingId&&!fileRaw&&tipo!=='carousel'){
     const orig=LOCAL.find('posts',editingId);
-    if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}
+    if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;videoKey=orig.videoKey||null;videoName=orig.videoName||null;videoType=orig.videoType||null;}
   }
   const data={
     title,platform,
@@ -910,23 +925,28 @@ async function saveAgendamento(){
     type:tipo,fileUrl,fileType,
     thumb:fileUrl?null:(TEMO[tipo]||'📸'),
     slides:tipo==='carousel'?[..._carouselSlides]:undefined,
-    ...data_extra,
   };
+  if(videoKey){data.videoKey=videoKey;data.videoName=videoName;data.videoType=videoType;}
+  // Close modal FIRST — always, regardless of what happens next
   closeModal('modalAgendamento');
+
+  // Helper: wrap Firebase with 8s timeout so it never hangs
+  const safeDB=(promise)=>Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
+  ]);
+
   try{
     if(editingId){
-      // UPDATE: LOCAL first for instant feedback, then Firebase
-      LOCAL.update('posts',editingId,data);
-      try{await DB.update('posts',editingId,data);}catch(e){toast('⚠️ Salvo localmente, sem conexão.','warning');}
+      LOCAL.update('posts',editingId,data); // instant local update
+      try{await safeDB(DB.update('posts',editingId,data));}
+      catch(e){console.warn('Firebase update failed:',e.message);}
       toast('Post atualizado! ✅','success');
       APP.editingId=null;
     } else {
-      // CREATE: DB.add handles both Firebase + LOCAL fallback
-      try{
-        await DB.add('posts',data);
-      }catch(e){
-        LOCAL.add('posts',data);// last resort local
-      }
+      LOCAL.add('posts',data); // instant local add (gives post an ID)
+      try{await safeDB(DB.add('posts',data));}
+      catch(e){console.warn('Firebase add failed:',e.message);}
       toast('Agendamento criado! 🗓️','success');
     }
   }catch(err){
@@ -942,14 +962,14 @@ async function saveAgendamento(){
 async function saveDraft(){if(APP._saving)return;const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
-  LOCAL.remove('posts',id);// instant
-  DB.remove('posts',id).catch(()=>{});// async
+  LOCAL.remove('posts',id);
+  DB.remove('posts',id).catch(()=>{});
   updateBadges();toast('Post excluído.','info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
 }
 function doChangeStatus(id,ns){
-  LOCAL.update('posts',id,{status:ns});// instant
-  DB.update('posts',id,{status:ns}).catch(()=>{});// async Firebase
+  LOCAL.update('posts',id,{status:ns});
+  DB.update('posts',id,{status:ns}).catch(()=>{}); Firebase
   updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
