@@ -1,15 +1,28 @@
-// AHA Social Planning — app.js v3.3
-const APP = { user:null, currentPage:'dashboard', charts:{}, editingId:null, unsubs:[], agendView:'lista' };
+// AHA Social Planning — app.js v4.0
+const APP = {
+  user:null, currentPage:'dashboard', charts:{}, editingId:null, unsubs:[],
+  agendView:'lista',
+  kanbanCols: JSON.parse(localStorage.getItem('aha_kanban_cols')||'null') || [
+    {id:'draft',    label:'Rascunho',           color:'#64748B', icon:'📝', status:'draft'},
+    {id:'content',  label:'Conteúdo',            color:'#2563EB', icon:'📋', status:'content'},
+    {id:'review',   label:'Revisão Interna',     color:'#7C3AED', icon:'👁️', status:'review'},
+    {id:'approval', label:'Aprovação Cliente',   color:'#D97706', icon:'⏳', status:'approval'},
+    {id:'approved', label:'Aprovado',            color:'#16A34A', icon:'✅', status:'approved'},
+    {id:'published',label:'Publicado',           color:'#EA580C', icon:'🚀', status:'published'},
+  ]
+};
 
 const PL  = {ig:'Instagram',fb:'Facebook',yt:'YouTube',tt:'TikTok',li:'LinkedIn',tw:'Twitter/X'};
 const PSI = {ig:'si-ig',fb:'si-fb',yt:'si-yt',tt:'si-tt',li:'si-li'};
 const PSH = {ig:'IG',fb:'FB',yt:'YT',tt:'TT',li:'IN',tw:'X'};
-const SL  = {pending:'Em Análise',approved:'Aprovado',rejected:'Rejeitado',scheduled:'Agendado',draft:'Rascunho'};
-const SB  = {pending:'badge-yellow',approved:'badge-green',rejected:'badge-red',scheduled:'badge-blue',draft:'badge-gray'};
+const SL  = {pending:'Em Análise',approved:'Aprovado',rejected:'Rejeitado',scheduled:'Agendado',draft:'Rascunho',review:'Em Revisão',content:'Conteúdo',approval:'Aguard. Aprovação',published:'Publicado'};
+const SB  = {pending:'badge-yellow',approved:'badge-green',rejected:'badge-red',scheduled:'badge-blue',draft:'badge-gray',review:'badge-purple',content:'badge-blue',approval:'badge-yellow',published:'badge-orange'};
 const TEMO= {image:'📸',video:'🎬',story:'📱',reel:'🎵',carousel:'🎠'};
 
+// ── Init ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  if (new URLSearchParams(window.location.search).get('approval')) { setupApprovalPage(); return; }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('approval')) { setupApprovalPage(); return; }
   initFirebase();
   AUTH.onAuthChange(fbUser => {
     if (fbUser) {
@@ -63,24 +76,41 @@ function seed(){
 function initApp(){updateBadges();renderDashboard();}
 function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
-  APP.unsubs.push(DB.listen('posts',posts=>{LOCAL.set('posts',posts);updateBadges();if(['posts','analise','aprovados','rejeitados','agendamentos','dashboard'].includes(APP.currentPage))renderPage(APP.currentPage);}));
+  APP.unsubs.push(DB.listen('posts',posts=>{LOCAL.set('posts',posts);updateBadges();if(['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'].includes(APP.currentPage))renderPage(APP.currentPage);}));
   APP.unsubs.push(DB.listen('accounts',accounts=>{LOCAL.set('accounts',accounts);updateBadges();if(APP.currentPage==='contas')renderContas();}));
-  APP.unsubs.push(DB.listen('campaigns',camps=>{LOCAL.set('camps',camps);if(APP.currentPage==='campanhas')renderCampanhas();}));
+  APP.unsubs.push(DB.listen('campaigns',camps=>{LOCAL.set('campaigns',camps);if(APP.currentPage==='campanhas')renderCampanhas();}));
 }
 
+// ── Navegação ─────────────────────────────────────────────────
 function showPage(page,btn){
+  // Posts submenu toggle
+  if(page==='posts-menu'){
+    const sub=el('posts-submenu');
+    if(sub)sub.style.display=sub.style.display==='none'?'block':'none';
+    return;
+  }
   document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   const sec=el('sec-'+page);if(sec)sec.classList.add('active');
   if(btn)btn.classList.add('active');
   APP.currentPage=page;
-  const titles={dashboard:'Dashboard',contas:'Contas',agendamentos:'Agendamentos',posts:'Posts',analise:'Em Análise',aprovados:'Aprovados',rejeitados:'Rejeitados',campanhas:'Campanhas',trafego:'Tráfego Pago'};
+  const titles={dashboard:'Dashboard',contas:'Contas',agendamentos:'Agendamentos',posts:'Posts',analise:'Em Análise',aprovados:'Aprovados',rejeitados:'Rejeitados',campanhas:'Campanhas',trafego:'Tráfego Pago',workflow:'Workflow',revisao:'Revisão'};
   setText('pageTitle',titles[page]||page);
   if(window.innerWidth<960)el('sidebar').classList.remove('mobile-open');
   renderPage(page);
 }
 function renderPage(page){
-  const r={dashboard:renderDashboard,contas:renderContas,agendamentos:renderAgendamentos,posts:()=>renderGrid('posts-grid',LOCAL.get('posts')),analise:()=>renderGrid('analise-grid',LOCAL.get('posts').filter(p=>p.status==='pending')),aprovados:()=>renderGrid('aprovados-grid',LOCAL.get('posts').filter(p=>p.status==='approved')),rejeitados:()=>renderGrid('rejeitados-grid',LOCAL.get('posts').filter(p=>p.status==='rejected')),campanhas:renderCampanhas,trafego:renderTrafego};
+  const r={
+    dashboard:renderDashboard,contas:renderContas,
+    agendamentos:renderAgendamentos,
+    posts:()=>renderGrid('posts-grid',LOCAL.get('posts')),
+    analise:()=>renderGrid('analise-grid',LOCAL.get('posts').filter(p=>p.status==='pending')),
+    aprovados:()=>renderGrid('aprovados-grid',LOCAL.get('posts').filter(p=>p.status==='approved')),
+    rejeitados:()=>renderGrid('rejeitados-grid',LOCAL.get('posts').filter(p=>p.status==='rejected')),
+    revisao:()=>renderGrid('revisao-grid',LOCAL.get('posts').filter(p=>p.status==='review')),
+    campanhas:renderCampanhas,trafego:renderTrafego,
+    workflow:renderKanban,
+  };
   if(r[page])r[page]();
 }
 function goHome(){showPage('dashboard',document.querySelector('[onclick*="dashboard"]'));}
@@ -90,6 +120,7 @@ function updateBadges(){
   setSafe('badge-contas',accs.length);
   setSafe('badge-analise',posts.filter(p=>p.status==='pending').length);
   setSafe('badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
+  setSafe('badge-revisao',posts.filter(p=>p.status==='review').length);
 }
 
 // ── Thumbnails ────────────────────────────────────────────────
@@ -116,6 +147,7 @@ function renderDashboard(){
   const posts=LOCAL.get('posts');
   setText('kpi-total',posts.length);setText('kpi-approved',posts.filter(p=>p.status==='approved').length);
   setText('kpi-pending',posts.filter(p=>p.status==='pending').length);setText('kpi-rejected',posts.filter(p=>p.status==='rejected').length);
+  const kpiPlat=el('kpi-total-plat');if(kpiPlat)kpiPlat.textContent=posts.length;
   initCharts();renderRecentTable();
 }
 function renderRecentTable(){
@@ -142,6 +174,7 @@ function postCard(p){
     <div class="post-card-thumb" style="position:relative;overflow:hidden;">${thumbBg(p)}
       <div style="position:absolute;top:8px;left:8px;z-index:1;"><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></div>
       <div style="position:absolute;top:8px;right:8px;z-index:1;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span></div>
+      ${p.type==='carousel'&&p.slides?.length?`<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">🎠 ${p.slides.length}</div>`:''}
     </div>
     <div class="post-card-body"><div class="post-card-title">${esc(p.title)}</div><div class="post-card-meta">${p.date||'Sem data'} · ${PL[p.platform]||p.platform}</div>${p.campaign?`<div class="post-card-meta" style="margin-top:2px;">📋 ${esc(p.campaign)}</div>`:''}</div>
     <div class="post-card-footer">
@@ -154,7 +187,25 @@ function postCard(p){
 function openPostDetail(id){
   const p=LOCAL.find('posts',id);if(!p)return;
   APP.editingId=id;
-  const thumbEl=el('detail-thumb');if(thumbEl)thumbEl.innerHTML=thumbFull(p);
+  const thumbEl=el('detail-thumb');
+  if(thumbEl){
+    if(p.type==='carousel'&&p.slides?.length){
+      // Carrossel preview
+      thumbEl.innerHTML=`<div style="position:relative;">
+        <div id="carousel-preview" style="overflow:hidden;border-radius:var(--radius);background:var(--surface2);">
+          ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:220px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;"/>`):(`<div style="height:180px;display:flex;align-items:center;justify-content:center;font-size:48px;">${s.thumb||'🖼️'}</div>`)}</div>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;">
+          ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:8px;height:8px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;transition:background .2s;" id="dot-${i}"></div>`).join('')}
+        </div>
+        <div style="text-align:center;margin-top:6px;font-size:11px;color:var(--text3);">🎠 Carrossel • <span id="carousel-current">1</span>/${p.slides.length} slides</div>
+      </div>`;
+      window._detailSlides=p.slides;
+      window._detailSlideIdx=0;
+    } else {
+      thumbEl.innerHTML=thumbFull(p);
+    }
+  }
   setText('detail-title',p.title);setText('detail-platform',PL[p.platform]||p.platform);
   setText('detail-date',p.date||'—');setText('detail-campaign',p.campaign||'—');
   setText('detail-type',p.type||'—');setText('detail-caption',p.caption||'Sem legenda.');
@@ -163,22 +214,177 @@ function openPostDetail(id){
   openModal('modalPostDetail');
 }
 
-// ── AGENDAMENTOS — corrigido ──────────────────────────────────
+function showCarouselSlide(idx){
+  const slides=window._detailSlides;if(!slides)return;
+  document.querySelectorAll('.carousel-slide-preview').forEach((s,i)=>{s.style.display=i===idx?'block':'none';});
+  document.querySelectorAll('[id^="dot-"]').forEach((d,i)=>{d.style.background=i===idx?'var(--primary)':'var(--border2)';});
+  const curr=el('carousel-current');if(curr)curr.textContent=idx+1;
+  window._detailSlideIdx=idx;
+}
+
+// ── KANBAN WORKFLOW — Drag & Drop + Edit cols ─────────────────
+let _dragId=null, _dragCol=null;
+
+function saveKanbanCols(){localStorage.setItem('aha_kanban_cols',JSON.stringify(APP.kanbanCols));}
+
+function renderKanban(){
+  const board=el('kanban-board');if(!board)return;
+  const posts=LOCAL.get('posts');
+
+  // Map statuses to columns
+  const grouped={};
+  APP.kanbanCols.forEach(c=>grouped[c.id]=[]);
+  posts.forEach(p=>{
+    const col=APP.kanbanCols.find(c=>c.status===p.status||c.id===p.status);
+    const colId=col?col.id:'content';
+    if(!grouped[colId])grouped[colId]=[];
+    grouped[colId].push(p);
+  });
+
+  board.innerHTML=APP.kanbanCols.map(col=>{
+    const items=grouped[col.id]||[];
+    return `<div class="kanban-col" id="kcol-${col.id}"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="kanbanDrop(event,'${col.id}')">
+      <div class="kanban-col-header" style="border-top:3px solid ${col.color};">
+        <div class="kanban-col-title" style="color:${col.color};">
+          <span>${col.icon}</span>
+          <span id="kcol-label-${col.id}" ondblclick="editKanbanColLabel('${col.id}')">${esc(col.label)}</span>
+          <span class="kanban-col-count" style="background:${col.color}20;color:${col.color};">${items.length}</span>
+        </div>
+        <button onclick="editKanbanCol('${col.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.5;padding:2px 4px;" title="Editar coluna">⚙️</button>
+      </div>
+      <div class="kanban-col-body" id="kcol-body-${col.id}">
+        ${items.length?items.map(p=>kanbanCard(p,col)).join(''):
+          `<div style="text-align:center;padding:24px 12px;color:var(--text4);font-size:11px;font-weight:500;border:2px dashed var(--border);border-radius:8px;margin:8px;">Arraste posts aqui</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function kanbanCard(p,col){
+  const url=getFileUrl(p);
+  return `<div class="kanban-card" draggable="true"
+    id="kcard-${p.id}"
+    ondragstart="kanbanDragStart(event,'${p.id}','${col.id}')"
+    ondragend="kanbanDragEnd(event)"
+    onclick="openPostDetail('${p.id}')">
+    ${url?`<div class="kanban-card-thumb">${isVideo(p)?`<div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>`}</div>`
+    :`<div style="height:60px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">${p.thumb||'📷'}</div>`}
+    <div class="kanban-card-title">${esc(p.title)}</div>
+    <div class="kanban-card-meta">
+      <span class="si ${PSI[p.platform]||''}" style="width:16px;height:16px;font-size:7px;">${PSH[p.platform]||'?'}</span>
+      ${p.date?`<span>📅 ${p.date}</span>`:''}
+    </div>
+    <div class="kanban-card-actions" onclick="event.stopPropagation()">
+      <button class="btn btn-xs btn-secondary" onclick="openPostEditor('${p.id}')">✏️</button>
+      <button class="btn btn-xs btn-primary" onclick="openShareModal('${p.id}')">📤</button>
+      <button class="btn btn-xs btn-danger" onclick="doDeletePost('${p.id}')">🗑️</button>
+    </div>
+  </div>`;
+}
+
+function kanbanDragStart(e,postId,colId){
+  _dragId=postId;_dragCol=colId;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{const c=el('kcard-'+postId);if(c)c.style.opacity='.4';},0);
+}
+function kanbanDragEnd(e){
+  if(_dragId){const c=el('kcard-'+_dragId);if(c)c.style.opacity='1';}
+  document.querySelectorAll('.kanban-col').forEach(c=>c.classList.remove('drag-over'));
+  _dragId=null;_dragCol=null;
+}
+function kanbanDrop(e,targetColId){
+  e.preventDefault();
+  const col=el('kcol-'+targetColId);if(col)col.classList.remove('drag-over');
+  if(!_dragId||_dragCol===targetColId)return;
+  const targetCol=APP.kanbanCols.find(c=>c.id===targetColId);
+  if(!targetCol)return;
+  const newStatus=targetCol.status||targetColId;
+  LOCAL.update('posts',_dragId,{status:newStatus});
+  DB.update('posts',_dragId,{status:newStatus});
+  updateBadges();
+  // Sound feedback
+  try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=600;g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.15);o.start();o.stop(ctx.currentTime+.15);}catch{}
+  toast(`✅ "${LOCAL.find('posts',_dragId)?.title||''}" movido para ${targetCol.label}`,'success');
+  renderKanban();
+}
+
+function editKanbanColLabel(colId){
+  const col=APP.kanbanCols.find(c=>c.id===colId);if(!col)return;
+  const labelEl=el('kcol-label-'+colId);if(!labelEl)return;
+  const input=document.createElement('input');
+  input.value=col.label;
+  input.style.cssText='font-size:12px;font-weight:700;border:1px solid var(--primary);border-radius:4px;padding:2px 6px;width:120px;font-family:inherit;';
+  labelEl.replaceWith(input);
+  input.focus();input.select();
+  const save=()=>{
+    const newLabel=input.value.trim()||col.label;
+    col.label=newLabel;saveKanbanCols();
+    const span=document.createElement('span');
+    span.id='kcol-label-'+colId;span.textContent=newLabel;
+    span.ondblclick=()=>editKanbanColLabel(colId);
+    input.replaceWith(span);
+  };
+  input.addEventListener('blur',save);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter')save();if(e.key==='Escape'){input.value=col.label;save();}});
+}
+
+function editKanbanCol(colId){
+  const col=APP.kanbanCols.find(c=>c.id===colId);if(!col)return;
+  // Open edit modal
+  const colors=['#64748B','#2563EB','#7C3AED','#D97706','#16A34A','#EA580C','#DC2626','#0891B2','#DB2777'];
+  const html=`
+  <div style="padding:20px;">
+    <div style="font-size:16px;font-weight:800;margin-bottom:16px;">⚙️ Editar Coluna</div>
+    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Nome</label>
+      <input id="kcol-edit-name" value="${esc(col.label)}" style="width:100%;margin-top:6px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;"/>
+    </div>
+    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Ícone</label>
+      <input id="kcol-edit-icon" value="${col.icon}" style="width:100%;margin-top:6px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:16px;"/>
+    </div>
+    <div style="margin-bottom:16px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Cor</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        ${colors.map(c=>`<div onclick="document.querySelectorAll('.col-color-opt').forEach(x=>x.style.outline='none');this.style.outline='3px solid #000';el('kcol-edit-color').value='${c}';" class="col-color-opt" style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;outline:${c===col.color?'3px solid #000':'none'};transition:transform .15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></div>`).join('')}
+      </div>
+      <input type="hidden" id="kcol-edit-color" value="${col.color}"/>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="this.closest('.modal-overlay').classList.remove('open');document.body.style.overflow='';" class="btn btn-secondary">Cancelar</button>
+      <button onclick="saveKanbanColEdit('${colId}')" class="btn btn-primary">Salvar</button>
+    </div>
+  </div>`;
+  let overlay=el('modalKanbanEdit');
+  if(!overlay){overlay=document.createElement('div');overlay.id='modalKanbanEdit';overlay.className='modal-overlay';overlay.innerHTML=`<div class="modal" style="max-width:360px;">${html}</div>`;overlay.onclick=e=>{if(e.target===overlay){overlay.classList.remove('open');document.body.style.overflow='';}};document.body.appendChild(overlay);}
+  else{overlay.querySelector('.modal').innerHTML=html;}
+  overlay.classList.add('open');document.body.style.overflow='hidden';
+}
+
+function saveKanbanColEdit(colId){
+  const col=APP.kanbanCols.find(c=>c.id===colId);if(!col)return;
+  col.label=v('kcol-edit-name').trim()||col.label;
+  col.icon=v('kcol-edit-icon').trim()||col.icon;
+  col.color=el('kcol-edit-color')?.value||col.color;
+  saveKanbanCols();
+  const overlay=el('modalKanbanEdit');if(overlay){overlay.classList.remove('open');document.body.style.overflow='';}
+  renderKanban();
+  toast('✅ Coluna atualizada!','success');
+}
+
+// ── AGENDAMENTOS ──────────────────────────────────────────────
 function renderAgendamentos(){
-  // Sincroniza botões de view com estado atual
   document.querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));
   const activeBtn=document.querySelector(`.vt-btn[onclick*="'${APP.agendView}'"]`);
   if(activeBtn)activeBtn.classList.add('active');
   applyAgendView(APP.agendView);
 }
-
 function setAgendView(view,btn){
   APP.agendView=view;
   document.querySelectorAll('.view-toggle .vt-btn').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
   applyAgendView(view);
 }
-
 function applyAgendView(view){
   ['lista','grade','calendario'].forEach(vi=>{const e2=el('agend-'+vi);if(e2)e2.style.display=vi===view?'block':'none';});
   const posts=LOCAL.get('posts');
@@ -186,8 +392,6 @@ function applyAgendView(view){
   if(view==='grade'){const g=el('agend-cards');if(g)g.innerHTML=posts.length?posts.map(p=>postCard(p)).join(''):emptyS('📅','Sem posts','Crie um agendamento.');}
   if(view==='calendario')renderCalendar('agend-cal',posts);
 }
-
-// LISTA — corrigido para mostrar todos os posts
 function renderAgendList(posts){
   const tbody=el('agend-list');if(!tbody)return;
   if(!posts.length){tbody.innerHTML=`<tr><td colspan="6">${emptyS('📅','Nenhum agendamento','Clique em "+ Novo Agendamento".')}</td></tr>`;return;}
@@ -206,25 +410,79 @@ function renderAgendList(posts){
   </tr>`).join('');
 }
 
-// ── Calendário ────────────────────────────────────────────────
+// ── CALENDÁRIO com thumbnails + clique p/ editar ──────────────
+let _calYear=null, _calMonth=null;
+
 function renderCalendar(cid,posts,yr,mo){
   const c=el(cid);if(!c)return;
-  const now=new Date(),Y=yr??now.getFullYear(),M=mo??now.getMonth();
+  const now=new Date();
+  const Y=yr!==undefined&&yr!==null?yr:(_calYear||now.getFullYear());
+  const M=mo!==undefined&&mo!==null?mo:(_calMonth!==null&&_calMonth!==undefined?_calMonth:now.getMonth());
+  _calYear=Y;_calMonth=M;
   const MN=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const DN=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const fd=new Date(Y,M,1).getDay(),dim=new Date(Y,M+1,0).getDate();
   const td=now.getDate(),tm=now.getMonth(),ty=now.getFullYear();
-  let h=`<div class="calendar-wrap"><div class="cal-header"><button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})">‹</button><div class="cal-month">${MN[M]} ${Y}</div><button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})">›</button></div><div class="cal-grid">${DN.map(d=>`<div class="cal-day-name">${d}</div>`).join('')}`;
+
+  // Month dropdown
+  const monthDropdown=`<div style="position:relative;display:inline-block;">
+    <button class="btn btn-secondary btn-sm" onclick="toggleMonthDropdown('${cid}',${Y})" style="font-weight:700;min-width:160px;justify-content:center;">
+      ${MN[M]} ${Y} ▾
+    </button>
+    <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);z-index:100;min-width:180px;padding:6px;margin-top:4px;">
+      ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}',${Y})" style="padding:8px 14px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:${i===M?'700':'500'};color:${i===M?'var(--primary)':'var(--text2)'};background:${i===M?'var(--primary-light)':'transparent'};" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='${i===M?'var(--primary-light)':'transparent'}'">
+        ${mn} ${Y}
+      </div>`).join('')}
+    </div>
+  </div>`;
+
+  let h=`<div class="calendar-wrap">
+    <div class="cal-header">
+      <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})">‹</button>
+      ${monthDropdown}
+      <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})">›</button>
+    </div>
+    <div class="cal-grid">${DN.map(d=>`<div class="cal-day-name">${d}</div>`).join('')}`;
+
   for(let i=0;i<fd;i++)h+=`<div class="cal-day other-month"></div>`;
   for(let d=1;d<=dim;d++){
     const isT=d===td&&M===tm&&Y===ty;
     const ds=`${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dp=posts.filter(p=>p.date===ds);
-    h+=`<div class="cal-day${isT?' today':''}" onclick="calClick('${cid}','${ds}')"><div class="cal-day-num">${d}</div>${dp.map(p=>{const pUrl=getFileUrl(p);return`<div class="cal-event ${p.status==='approved'?'green':p.status==='rejected'?'red':''}" onclick="event.stopPropagation();openPostDetail('${p.id}')" title="${esc(p.title)}" style="${pUrl&&!isVideo(p)?`background-image:url('${pUrl}');background-size:cover;background-position:center;min-height:24px;color:transparent;`:''}">${pUrl&&!isVideo(p)?'&nbsp;':esc(p.title.slice(0,14))+(p.title.length>14?'..':'')}</div>`;}).join('')}</div>`;
+    h+=`<div class="cal-day${isT?' today':''}" onclick="calClick('${cid}','${ds}')">
+      <div class="cal-day-num">${d}</div>
+      ${dp.map(p=>{
+        const pUrl=getFileUrl(p);
+        const thumb=pUrl&&!isVideo(p)
+          ?`<div onclick="event.stopPropagation();openCalendarPostEdit('${p.id}')" style="width:100%;height:40px;background-image:url('${pUrl}');background-size:cover;background-position:center;border-radius:4px;cursor:pointer;position:relative;" title="${esc(p.title)}"><div style="position:absolute;inset:0;background:rgba(0,0,0,.2);border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'"><span style="font-size:10px;color:#fff;font-weight:700;">✏️</span></div></div>`
+          :`<div class="cal-event ${p.status==='approved'?'green':p.status==='rejected'?'red':''}" onclick="event.stopPropagation();openCalendarPostEdit('${p.id}')" title="${esc(p.title)}" style="cursor:pointer;">${esc(p.title.slice(0,12))}${p.title.length>12?'..':''}</div>`;
+        return thumb;
+      }).join('')}
+    </div>`;
   }
   h+=`</div></div>`;c.innerHTML=h;
 }
-function calClick(cid,ds){if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}}
+
+function toggleMonthDropdown(cid,yr){
+  const dd=el('month-dropdown-'+cid);
+  if(!dd)return;
+  if(dd.style.display==='none'){
+    dd.style.display='block';
+    // Close on outside click
+    setTimeout(()=>document.addEventListener('click',function close(e){if(!dd.contains(e.target)){dd.style.display='none';document.removeEventListener('click',close);}},),0);
+  } else {
+    dd.style.display='none';
+  }
+}
+
+function openCalendarPostEdit(id){
+  // Open editor directly — save returns to calendar view
+  openPostEditor(id);
+}
+
+function calClick(cid,ds){
+  if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}
+}
 
 // ── Upload ────────────────────────────────────────────────────
 function triggerFile(inputId){el(inputId)?.click();}
@@ -236,11 +494,11 @@ async function processFile(file,previewId,dataId){
   const isImg=file.type.startsWith('image/'),isVid=file.type.startsWith('video/');
   if(!isImg&&!isVid){toast('Use PNG, JPG, GIF ou MP4.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
-  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;gap:12px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando...</div></div>`;
+  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:10px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando...</div></div>`;
   try{
-    if(isImg){const compressed=await compressImage(file);if(dataEl)dataEl.value=compressed;if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;toast(`✅ ${file.name} carregado!`,'success');}
-    else{const thumb=await videoThumbnail(file);if(dataEl)dataEl.value=JSON.stringify({thumb,type:'video',name:file.name,isVideo:true});if(prev)prev.innerHTML=`<div style="position:relative;height:160px;background:#000;border-radius:var(--radius);overflow:hidden;"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;opacity:.7;"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div></div>`;toast(`✅ Vídeo "${file.name}" carregado!`,'success');}
-  }catch(e){toast('Erro: '+e.message,'error');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;}
+    if(isImg){const compressed=await compressImage(file);if(dataEl)dataEl.value=compressed;if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;toast(`✅ ${file.name} carregado!`,'success');}
+    else{const thumb=await videoThumbnail(file);if(dataEl)dataEl.value=JSON.stringify({thumb,type:'video',name:file.name,isVideo:true});if(prev)prev.innerHTML=`<div style="position:relative;height:120px;background:#000;border-radius:var(--radius);overflow:hidden;"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;opacity:.7;"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div></div>`;toast(`✅ Vídeo "${file.name}" carregado!`,'success');}
+  }catch(e){toast('Erro: '+e.message,'error');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div>`;}
 }
 function compressImage(file){
   return new Promise((resolve,reject)=>{
@@ -259,7 +517,58 @@ function videoThumbnail(file){
   });
 }
 
-// ── NOVO AGENDAMENTO ──────────────────────────────────────────
+// ── CARROSSEL — upload múltiplos slides ───────────────────────
+let _carouselSlides=[];
+
+function initCarouselSlides(existing){
+  _carouselSlides=existing||[];
+  renderCarouselSlots();
+}
+
+function renderCarouselSlots(){
+  const cont=el('carousel-slots');if(!cont)return;
+  const maxSlides=6;
+  let html='';
+  for(let i=0;i<maxSlides;i++){
+    const s=_carouselSlides[i];
+    if(s){
+      html+=`<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--primary);">
+        <div style="height:80px;background:var(--surface2);">
+          ${s.fileUrl?(s.fileType==='video'?`<div style="height:80px;background:#000;display:flex;align-items:center;justify-content:center;font-size:20px;">▶️</div>`:`<img src="${s.fileUrl}" style="width:100%;height:80px;object-fit:cover;"/>`):`<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;">${s.thumb||'🖼️'}</div>`}
+        </div>
+        <div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:3px;background:var(--primary-light);">Slide ${i+1}</div>
+        <button onclick="removeCarouselSlide(${i})" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>`;
+    } else {
+      html+=`<label style="height:108px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--text3);gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''">
+        <span style="font-size:22px;">➕</span>
+        <span style="font-weight:600;">Slide ${i+1}</span>
+        <input type="file" accept="image/*,video/*" style="display:none;" onchange="addCarouselSlide(event,${i})"/>
+      </label>`;
+    }
+  }
+  cont.innerHTML=html;
+  const counter=el('carousel-count');if(counter)counter.textContent=`${_carouselSlides.length}/${maxSlides} slides`;
+}
+
+async function addCarouselSlide(e,idx){
+  const file=e.target.files[0];if(!file)return;
+  try{
+    let fileUrl,fileType;
+    if(file.type.startsWith('image/')){fileUrl=await compressImage(file);fileType='image';}
+    else{const t=await videoThumbnail(file);fileUrl=t;fileType='video';}
+    _carouselSlides[idx]={fileUrl,fileType,thumb:'🖼️',caption:''};
+    renderCarouselSlots();
+    toast(`✅ Slide ${idx+1} adicionado!`,'success');
+  }catch(err){toast('Erro: '+err.message,'error');}
+}
+
+function removeCarouselSlide(idx){
+  _carouselSlides.splice(idx,1);
+  renderCarouselSlots();
+}
+
+// ── Novo Agendamento ──────────────────────────────────────────
 function openNewAgendamento(){
   APP.editingId=null;
   ['ag-title','ag-date','ag-caption','ag-tags'].forEach(id=>sv(id,''));
@@ -268,46 +577,42 @@ function openNewAgendamento(){
   if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
   sv('ag-file-data','');
   resetTipoBtns();
+  _carouselSlides=[];
+  toggleCarouselSection('image');
   setText('modalAgendTitulo','📅 Novo Agendamento');
   openModal('modalAgendamento');
 }
 
-// ── EDITAR — corrigido: preenche TODOS os campos corretamente ─
 function openPostEditor(id){
-  const p=LOCAL.find('posts',id);
-  if(!p){toast('Post não encontrado.','error');return;}
+  const p=LOCAL.find('posts',id);if(!p)return;
   APP.editingId=id;
-
-  // Preenche todos os campos
-  sv('ag-title', p.title||'');
-  sv('ag-platform', p.platform||'ig');
-  sv('ag-date', p.date||'');
-  sv('ag-campaign', p.campaign||'');
-  sv('ag-caption', p.caption||'');
-  sv('ag-tags', p.tags||'');
-  sv('ag-status', p.status||'pending');
-
-  // Tipo de conteúdo
+  sv('ag-title',p.title||'');sv('ag-platform',p.platform||'ig');sv('ag-date',p.date||'');
+  sv('ag-campaign',p.campaign||'');sv('ag-caption',p.caption||'');sv('ag-tags',p.tags||'');sv('ag-status',p.status||'pending');
   document.querySelectorAll('.tipo-btn').forEach(b=>{
     b.classList.remove('active');b.style.cssText='';
     if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
   });
-
-  // Preview do arquivo existente
-  const prev=el('ag-file-preview');
-  const url=getFileUrl(p);
-  if(url&&prev){
-    if(isVideo(p))prev.innerHTML=`<div style="position:relative;height:160px;background:#000;border-radius:var(--radius);overflow:hidden;display:flex;align-items:center;justify-content:center;"><div style="font-size:48px;">▶️</div><div style="position:absolute;bottom:6px;left:0;right:0;text-align:center;color:#fff;font-size:11px;">Vídeo carregado</div></div>`;
-    else prev.innerHTML=`<img src="${url}" style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius);display:block;" onerror="this.parentNode.innerHTML='<div style=\\'height:160px;display:flex;align-items:center;justify-content:center;font-size:40px;\\'>${p.thumb||'📷'}</div>'"/>`;
-    sv('ag-file-data', p.fileUrl||'');
-  } else if(prev){
-    prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
+  toggleCarouselSection(p.type||'image');
+  if(p.type==='carousel'&&p.slides){_carouselSlides=[...p.slides];renderCarouselSlots();}
+  else{_carouselSlides=[];}
+  const prev=el('ag-file-preview'),url=getFileUrl(p);
+  if(url&&prev&&p.type!=='carousel'){
+    if(isVideo(p))prev.innerHTML=`<div style="height:120px;background:#000;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div>`;
+    else prev.innerHTML=`<img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+    sv('ag-file-data',p.fileUrl||'');
+  }else if(prev){
+    prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div>`;
     sv('ag-file-data','');
   }
-
   setText('modalAgendTitulo','✏️ Editar Post');
   closeModal('modalPostDetail');
   openModal('modalAgendamento');
+}
+
+function toggleCarouselSection(tipo){
+  const cs=el('carousel-section'),fs=el('file-section');
+  if(tipo==='carousel'){if(cs)cs.style.display='block';if(fs)fs.style.display='none';}
+  else{if(cs)cs.style.display='none';if(fs)fs.style.display='block';}
 }
 
 function resetTipoBtns(){
@@ -315,16 +620,17 @@ function resetTipoBtns(){
     b.classList.remove('active');b.style.cssText='';
     if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
   });
+  toggleCarouselSection('image');
 }
-function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';});btn.classList.add('active');btn.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
+function selectTipo(btn){
+  document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';});
+  btn.classList.add('active');btn.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';
+  toggleCarouselSection(btn.dataset.tipo);
+}
 
-// ── SALVAR — corrigido: persiste TODOS os dados ───────────────
 async function saveAgendamento(){
-  const title=v('ag-title')?.trim();
-  const platform=v('ag-platform');
+  const title=v('ag-title')?.trim(),platform=v('ag-platform');
   if(!title){toast('Informe o título. ⚠️','warning');return;}
-  if(!platform){toast('Selecione a plataforma.','warning');return;}
-
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
   const fileRaw=v('ag-file-data');
   let fileUrl=null,fileType='image';
@@ -332,64 +638,35 @@ async function saveAgendamento(){
     if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}
     else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}
   }
-
-  // Se está editando, mantém o fileUrl original se não fez novo upload
-  if(APP.editingId && !fileRaw){
-    const original=LOCAL.find('posts',APP.editingId);
-    if(original){fileUrl=original.fileUrl;fileType=original.fileType;}
-  }
-
+  if(APP.editingId&&!fileRaw&&tipo!=='carousel'){const orig=LOCAL.find('posts',APP.editingId);if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}}
   const data={
-    title, platform,
-    date:     v('ag-date')||'',
-    campaign: v('ag-campaign')?.trim()||'',
-    caption:  v('ag-caption')?.trim()||'',
-    tags:     v('ag-tags')?.trim()||'',
-    status:   v('ag-status')||'pending',
-    type:     tipo,
-    fileUrl,  fileType,
-    thumb:    fileUrl?null:(TEMO[tipo]||'📸'),
+    title,platform,date:v('ag-date')||'',campaign:v('ag-campaign')?.trim()||'',
+    caption:v('ag-caption')?.trim()||'',tags:v('ag-tags')?.trim()||'',
+    status:v('ag-status')||'pending',type:tipo,fileUrl,fileType,
+    thumb:fileUrl?null:(TEMO[tipo]||'📸'),
+    slides:tipo==='carousel'?[..._carouselSlides]:undefined,
   };
-
   closeModal('modalAgendamento');
-
-  if(APP.editingId){
-    LOCAL.update('posts',APP.editingId,data);
-    DB.update('posts',APP.editingId,data);
-    toast('Post atualizado! ✅','success');
-    APP.editingId=null;
-  } else {
-    LOCAL.add('posts',data);
-    DB.add('posts',data);
-    toast('Agendamento criado! 🗓️','success');
-  }
-
+  if(APP.editingId){LOCAL.update('posts',APP.editingId,data);DB.update('posts',APP.editingId,data);toast('Post atualizado! ✅','success');APP.editingId=null;}
+  else{LOCAL.add('posts',data);DB.add('posts',data);toast('Agendamento criado! 🗓️','success');}
   updateBadges();
-
-  // Permanece no modo de visualização atual
-  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
   else renderPage(APP.currentPage);
-
   updateCampaignCounts();
 }
-
 async function saveDraft(){const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
-
-// ── DELETAR — permanece no modo atual ─────────────────────────
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
   LOCAL.remove('posts',id);DB.remove('posts',id);
   updateBadges();toast('Post excluído.','info');
-  // Permanece no modo atual
-  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
   else renderPage(APP.currentPage);
 }
-
 function doChangeStatus(id,ns){
   LOCAL.update('posts',id,{status:ns});DB.update('posts',id,{status:ns});
   updateBadges();closeModal('modalPostDetail');
-  toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
-  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
   else renderPage(APP.currentPage);
   updateCampaignCounts();
 }
@@ -398,86 +675,108 @@ function updateCampaignCounts(){
   LOCAL.get('campaigns').forEach(c=>{const cp=posts.filter(p=>p.campaign===c.name);const upd={posts:cp.length,approved:cp.filter(p=>p.status==='approved').length,pending:cp.filter(p=>p.status==='pending').length,rejected:cp.filter(p=>p.status==='rejected').length};LOCAL.update('campaigns',c.id,upd);DB.update('campaigns',c.id,upd);});
 }
 
-// ── SHARE — abre nova aba ─────────────────────────────────────
+// ── SHARE ─────────────────────────────────────────────────────
 function openShareModal(id){
   const p=LOCAL.find('posts',id);if(!p)return;
   const link=window.location.origin+window.location.pathname.replace('index.html','')+'?approval='+id;
   sv('share-link-input',link);
   el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Segue o link para aprovação do criativo:\n\n*'+p.title+'*\n\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
-  el('share-email').href=`mailto:?subject=Aprovação de Criativo — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Olá!\n\nPor favor acesse o link abaixo para revisar o criativo:\n\n'+link+'\n\nAguardo seu retorno.\n\nAHA Social Planning')}`;
+  el('share-email').href=`mailto:?subject=Aprovação — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Acesse:\n\n'+link)}`;
   openModal('modalShare');
 }
 function copyLink(){const val=v('share-link-input');if(!val)return;navigator.clipboard?.writeText(val).then(()=>toast('Link copiado! 📋','success'));}
 function openApprovalTab(){const link=v('share-link-input');if(link)window.open(link,'_blank','noopener');}
 
-// ── PÁGINA DE APROVAÇÃO — responsiva, persiste, retorna dados ─
+// ── PÁGINA DE APROVAÇÃO — sem redirecionar para login ─────────
 function setupApprovalPage(){
   const id=new URLSearchParams(window.location.search).get('approval');
   if(!id)return;
 
-  document.addEventListener('DOMContentLoaded',()=>{
-    // Esconde tudo exceto a página de aprovação
+  // Esconde login e app IMEDIATAMENTE, antes do DOMContentLoaded
+  const hideAll=()=>{
     document.querySelectorAll('#loginPage,#app').forEach(e=>{if(e)e.style.display='none';});
-    const appEl=el('approvalPage');
-    if(appEl)appEl.style.display='block';
+    const ap=el('approvalPage');if(ap)ap.style.display='block';
+  };
 
-    initFirebase();
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});
+  } else {
+    hideAll();loadApprovalPost(id);
+  }
+}
 
-    const loadPost=async()=>{
-      let p=LOCAL.find('posts',id);
-      if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
+async function loadApprovalPost(id){
+  initFirebase();
+  // Wait a moment for Firebase to init
+  await new Promise(r=>setTimeout(r,600));
+  let p=LOCAL.find('posts',id);
+  if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
 
-      if(!p){
-        if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou o post foi removido.</p></div></div>`;
-        return;
-      }
+  const appEl=el('approvalPage');
+  if(!p){
+    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou foi removido.</p></div></div>`;
+    return;
+  }
 
-      window._approvalId=id;
-      window._approvalPost=p;
+  window._approvalId=id;
+  window._approvalPost=p;
 
-      // Preenche thumbnail
-      const thumbEl=el('ap-thumb');
-      if(thumbEl){
-        const url=getFileUrl(p);
-        if(url&&!isVideo(p))thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;
-        else if(url&&isVideo(p))thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;
-        else thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;
-      }
+  // Preenche preview do arquivo
+  const thumbEl=el('ap-thumb');
+  if(thumbEl){
+    const url=getFileUrl(p);
+    if(p.type==='carousel'&&p.slides?.length){
+      // Carrossel
+      thumbEl.innerHTML=`<div>
+        <div id="ap-carousel" style="background:var(--surface2);border-radius:var(--radius);overflow:hidden;min-height:200px;">
+          ${p.slides.map((s,i)=>`<div class="ap-slide" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:350px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:350px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;">
+          <button onclick="apCarouselNav(-1)" class="btn btn-secondary btn-sm">‹ Anterior</button>
+          <span id="ap-carousel-counter" style="font-size:12px;font-weight:700;color:var(--text3);">1/${p.slides.length}</span>
+          <button onclick="apCarouselNav(1)" class="btn btn-secondary btn-sm">Próximo ›</button>
+        </div>
+      </div>`;
+      window._apSlideIdx=0;window._apSlides=p.slides;
+    } else if(url&&!isVideo(p)){
+      thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;
+    } else if(url&&isVideo(p)){
+      thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;
+    } else {
+      thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;
+    }
+  }
 
-      setText('ap-title',p.title);
-      setText('ap-platform',PL[p.platform]||p.platform);
-      setText('ap-date',p.date||'—');
-      setText('ap-campaign',p.campaign||'—');
-      setText('ap-caption',p.caption||'Sem legenda.');
+  setText('ap-title',p.title);
+  setText('ap-platform',PL[p.platform]||p.platform);
+  setText('ap-date',p.date||'—');
+  setText('ap-campaign',p.campaign||'—');
+  setText('ap-caption',p.caption||'Sem legenda.');
+  const stEl=el('ap-status');
+  if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
+  if(p.clientComment){const ce=el('ap-comment');if(ce)ce.value=p.clientComment;}
 
-      const stEl=el('ap-status');
-      if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
+  // Preenche selector de workflow
+  const wfSel=el('ap-workflow-select');
+  if(wfSel){
+    wfSel.innerHTML=`<option value="">— Selecionar workflow —</option>`+
+      APP.kanbanCols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
+  }
 
-      // Mostra comentário anterior se existir
-      if(p.clientComment){
-        const commentEl=el('ap-comment');
-        if(commentEl)commentEl.value=p.clientComment;
-      }
+  if(p.status!=='pending'&&p.status!=='draft'){showApprovalResult(p.status);}
+}
 
-      // Se já foi revisado, mostra o estado
-      if(p.status!=='pending'&&p.status!=='draft'){
-        showApprovalResult(p.status);
-      }
-    };
-
-    loadPost();
-  });
+function apCarouselNav(dir){
+  const slides=window._apSlides;if(!slides)return;
+  const newIdx=Math.max(0,Math.min(slides.length-1,(window._apSlideIdx||0)+dir));
+  window._apSlideIdx=newIdx;
+  document.querySelectorAll('.ap-slide').forEach((s,i)=>s.style.display=i===newIdx?'block':'none');
+  const counter=el('ap-carousel-counter');if(counter)counter.textContent=`${newIdx+1}/${slides.length}`;
 }
 
 function showApprovalResult(status){
-  const resultDiv=el('ap-result');
-  if(!resultDiv)return;
-  const configs={
-    approved:{bg:'#F0FDF4',color:'#16A34A',icon:'✅',text:'Este criativo foi aprovado!'},
-    rejected:{bg:'#FEF2F2',color:'#DC2626',icon:'❌',text:'Este criativo foi rejeitado.'},
-    pending: {bg:'#FFFBEB',color:'#D97706',icon:'⚠️',text:'Correção solicitada.'},
-  };
-  const cfg=configs[status]||configs.pending;
+  const resultDiv=el('ap-result');if(!resultDiv)return;
+  const cfg={approved:{bg:'#F0FDF4',color:'#16A34A',icon:'✅',text:'Este criativo foi aprovado!'},rejected:{bg:'#FEF2F2',color:'#DC2626',icon:'❌',text:'Rejeitado.'},pending:{bg:'#FFFBEB',color:'#D97706',icon:'⚠️',text:'Correção solicitada.'}}[status]||{bg:'#F8FAFC',color:'#64748B',icon:'ℹ️',text:'Resposta registrada.'};
   resultDiv.style.cssText=`display:block;text-align:center;padding:20px;margin-top:16px;border-radius:10px;background:${cfg.bg};`;
   resultDiv.innerHTML=`<div style="font-size:36px;margin-bottom:8px;">${cfg.icon}</div><div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.text}</div>`;
 }
@@ -487,31 +786,34 @@ async function approvalAction(action){
   const ns={approve:'approved',reject:'rejected',correct:'pending'}[action];
   const comment=v('ap-comment')||'';
 
-  // Salva localmente e no Firebase
-  const updateData={status:ns,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action};
+  // Lê workflow selecionado
+  const wfSel=el('ap-workflow-select');
+  const workflowId=wfSel?wfSel.value:'';
+  const targetCol=workflowId?APP.kanbanCols.find(c=>c.id===workflowId):null;
+  const finalStatus=targetCol?(targetCol.status||targetCol.id):ns;
+
+  const updateData={status:finalStatus,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action,clientWorkflow:workflowId};
   LOCAL.update('posts',id,updateData);
   await DB.update('posts',id,updateData);
 
-  // Atualiza o badge de status na página
   const stEl=el('ap-status');
-  if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';}
-
-  // Mostra resultado visual
-  showApprovalResult(ns);
-
-  // Toast de confirmação
-  toast({approve:'✅ Criativo aprovado! O time foi notificado.',reject:'❌ Criativo rejeitado. O time foi notificado.',correct:'⚠️ Correção solicitada. O time foi notificado.'}[action]||'Resposta registrada!',action==='approve'?'success':action==='reject'?'error':'warning');
-
-  // Desabilita botões de ação mas mantém a página
+  if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção';}
+  showApprovalResult(finalStatus);
+  toast({approve:'✅ Aprovado! O time foi notificado.',reject:'❌ Rejeitado. O time foi notificado.',correct:'⚠️ Correção solicitada.'}[action]||'Registrado!',action==='approve'?'success':action==='reject'?'error':'warning');
   document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
 }
 
 async function saveApprovalComment(){
   const id=window._approvalId;if(!id)return;
   const comment=v('ap-comment')||'';
-  if(!comment.trim()){toast('Digite um comentário antes de salvar.','warning');return;}
-  LOCAL.update('posts',id,{clientComment:comment,commentSavedAt:new Date().toISOString()});
-  await DB.update('posts',id,{clientComment:comment,commentSavedAt:new Date().toISOString()});
+  if(!comment.trim()){toast('Digite um comentário.','warning');return;}
+  // Save workflow selection too
+  const wfSel=el('ap-workflow-select');
+  const workflowId=wfSel?wfSel.value:'';
+  const updateData={clientComment:comment,commentSavedAt:new Date().toISOString()};
+  if(workflowId){const col=APP.kanbanCols.find(c=>c.id===workflowId);if(col)updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}
+  LOCAL.update('posts',id,updateData);
+  await DB.update('posts',id,updateData);
   toast('💬 Comentário salvo e enviado ao time!','success');
 }
 
@@ -540,7 +842,7 @@ async function saveAccount(){
 function renderCampanhas(){
   const camps=LOCAL.get('campaigns'),cont=el('campanhas-list');if(!cont)return;
   const SLc={active:'Ativa',paused:'Pausada',ended:'Encerrada'},SBc={active:'badge-green',paused:'badge-yellow',ended:'badge-gray'};
-  cont.innerHTML=camps.map(c=>{const prog=c.posts?Math.round((c.approved/c.posts)*100):0;const plats=(c.platforms||'').split(',').filter(Boolean);return`<div class="chart-card" style="margin-bottom:14px;"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;"><div><div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:3px;">${esc(c.name)}</div><div style="font-size:12px;color:var(--text3);">📅 ${c.start||'—'} → ${c.end||'—'}</div>${c.desc?`<div style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(c.desc)}</div>`:''}</div><div style="display:flex;align-items:center;gap:8px;">${plats.map(pl=>`<span class="si ${PSI[pl]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[pl]||'?'}</span>`).join('')}<span class="badge ${SBc[c.status]||'badge-gray'}">${SLc[c.status]||c.status}</span></div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;"><div style="text-align:center;"><div style="font-size:22px;font-weight:800;font-family:'Space Grotesk',sans-serif;">${c.posts}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Posts</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--green);font-family:'Space Grotesk',sans-serif;">${c.approved}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Aprovados</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--yellow);font-family:'Space Grotesk',sans-serif;">${c.pending}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Pendentes</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;font-family:'Space Grotesk',sans-serif;">${c.budget||'—'}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;">Budget</div></div></div><div style="margin-bottom:14px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;color:var(--text3);"><span>Progresso</span><span style="font-weight:700;color:${prog>=80?'var(--green)':prog>=50?'var(--yellow)':'var(--primary)'};">${prog}%</span></div><div class="progress-bar"><div class="progress-fill" style="width:${prog}%;background:${prog>=80?'var(--green)':prog>=50?'var(--yellow)':'var(--primary)'};"></div></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm btn-primary" onclick="editCampaign('${c.id}')">✏️ Editar</button><button class="btn btn-sm btn-secondary" onclick="exportCampReport('${c.id}')">📊 Relatório</button><button class="btn btn-sm btn-secondary" onclick="doToggleCamp('${c.id}','${c.status}')">${c.status==='active'?'⏸ Pausar':'▶ Ativar'}</button><button class="btn btn-sm btn-danger" onclick="doDeleteCamp('${c.id}')">🗑️</button></div></div>`;}).join('')||emptyS('📋','Nenhuma campanha','Crie sua primeira campanha.');
+  cont.innerHTML=camps.map(c=>{const prog=c.posts?Math.round((c.approved/c.posts)*100):0;const plats=(c.platforms||'').split(',').filter(Boolean);return`<div class="chart-card" style="margin-bottom:14px;"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;"><div><div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:3px;">${esc(c.name)}</div><div style="font-size:12px;color:var(--text3);">📅 ${c.start||'—'} → ${c.end||'—'}</div>${c.desc?`<div style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(c.desc)}</div>`:''}</div><div style="display:flex;align-items:center;gap:8px;">${plats.map(pl=>`<span class="si ${PSI[pl]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[pl]||'?'}</span>`).join('')}<span class="badge ${SBc[c.status]||'badge-gray'}">${SLc[c.status]||c.status}</span></div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px;"><div style="text-align:center;"><div style="font-size:22px;font-weight:800;">${c.posts}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px;">Posts</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--green);">${c.approved}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px;">Aprovados</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--yellow);">${c.pending}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px;">Pendentes</div></div><div style="text-align:center;"><div style="font-size:22px;font-weight:800;">${c.budget||'—'}</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-top:2px;">Budget</div></div></div><div style="margin-bottom:14px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px;color:var(--text3);"><span>Progresso</span><span style="font-weight:700;color:${prog>=80?'var(--green)':prog>=50?'var(--yellow)':'var(--primary)'};">${prog}%</span></div><div class="progress-bar"><div class="progress-fill" style="width:${prog}%;background:${prog>=80?'var(--green)':prog>=50?'var(--yellow)':'var(--primary)'};"></div></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm btn-primary" onclick="editCampaign('${c.id}')">✏️ Editar</button><button class="btn btn-sm btn-secondary" onclick="exportCampReport('${c.id}')">📊 Relatório</button><button class="btn btn-sm btn-secondary" onclick="doToggleCamp('${c.id}','${c.status}')">${c.status==='active'?'⏸ Pausar':'▶ Ativar'}</button><button class="btn btn-sm btn-danger" onclick="doDeleteCamp('${c.id}')">🗑️</button></div></div>`;}).join('')||emptyS('📋','Nenhuma campanha','Crie sua primeira campanha.');
   const active=camps.filter(c=>c.status==='active').length;const tb=camps.reduce((s,c)=>{const n=parseFloat((c.budget||'0').replace(/[^\d.]/g,''));return s+n;},0);const tp=camps.reduce((s,c)=>s+c.posts,0),ta=camps.reduce((s,c)=>s+c.approved,0);
   setSafe('camp-metric-active',active);setSafe('camp-metric-budget','R$ '+(tb/1000).toFixed(0)+'K');setSafe('camp-metric-posts',tp);setSafe('camp-metric-rate',tp?Math.round((ta/tp)*100)+'%':'—');
 }
