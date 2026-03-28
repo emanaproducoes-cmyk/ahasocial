@@ -1,14 +1,16 @@
-// AHA Social Planning — app.js v4.0
+// AHA Social Planning — app.js v5.0
 const APP = {
-  user:null, currentPage:'dashboard', charts:{}, editingId:null, unsubs:[],
-  agendView:'lista',
+  user:null,
+  currentPage: localStorage.getItem('aha_page')||'dashboard',
+  charts:{}, editingId:null, unsubs:[], agendView:'lista',
   kanbanCols: JSON.parse(localStorage.getItem('aha_kanban_cols')||'null') || [
-    {id:'draft',    label:'Rascunho',           color:'#64748B', icon:'📝', status:'draft'},
-    {id:'content',  label:'Conteúdo',            color:'#2563EB', icon:'📋', status:'content'},
-    {id:'review',   label:'Revisão Interna',     color:'#7C3AED', icon:'👁️', status:'review'},
-    {id:'approval', label:'Aprovação Cliente',   color:'#D97706', icon:'⏳', status:'approval'},
-    {id:'approved', label:'Aprovado',            color:'#16A34A', icon:'✅', status:'approved'},
-    {id:'published',label:'Publicado',           color:'#EA580C', icon:'🚀', status:'published'},
+    {id:'draft',    label:'Rascunho',          color:'#64748B', icon:'📝', status:'draft'},
+    {id:'content',  label:'Conteúdo',           color:'#2563EB', icon:'📋', status:'content'},
+    {id:'review',   label:'Revisão',            color:'#7C3AED', icon:'👁️', status:'review'},
+    {id:'approval', label:'Aprovação Cliente',  color:'#D97706', icon:'⏳', status:'approval'},
+    {id:'approved', label:'Aprovado',           color:'#16A34A', icon:'✅', status:'approved'},
+    {id:'rejected', label:'Rejeitados',         color:'#DC2626', icon:'❌', status:'rejected'},
+    {id:'published',label:'Publicado',          color:'#EA580C', icon:'🚀', status:'published'},
   ]
 };
 
@@ -29,7 +31,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const name=fbUser.displayName||fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       APP.user={uid:fbUser.uid,email:fbUser.email,name,avatar:name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),photo:fbUser.photoURL,role:'Gerente de Conteúdo'};
       localStorage.setItem('aha_user',JSON.stringify(APP.user));showApp();
-    } else { const saved=getSavedUser(); if(saved){APP.user=saved;showApp();} }
+    } else {
+      const saved=getSavedUser();
+      if(saved){APP.user=saved;showApp();}
+    }
   });
 });
 
@@ -48,10 +53,13 @@ async function doGoogleLogin(){
 }
 function doLogout(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
-  localStorage.removeItem('aha_user');APP.user=null;
+  localStorage.removeItem('aha_user');
+  localStorage.removeItem('aha_page');
+  APP.user=null;
   el('loginPage').style.display='flex';el('app').style.display='none';
   try{AUTH.logout();}catch{}
 }
+
 function showApp(){
   el('loginPage').style.display='none';el('app').style.display='block';
   const u=APP.user;
@@ -59,7 +67,15 @@ function showApp(){
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
   if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
   if(!LOCAL.get('posts').length)seed();
-  startListeners();initApp();
+  startListeners();
+  // FIX IV: restore current page after refresh
+  const savedPage=localStorage.getItem('aha_page')||'dashboard';
+  updateBadges();
+  // Small delay to let Firebase listeners populate data first
+  setTimeout(()=>{
+    const navBtn=document.querySelector(`[onclick*="showPage('${savedPage}'"]`)||document.querySelector(`[onclick*='showPage("${savedPage}"']`);
+    showPage(savedPage, navBtn);
+  }, 300);
   setInterval(()=>updateBadges(),5000);
 }
 
@@ -73,17 +89,21 @@ function seed(){
   LOCAL.set('campaigns',[{id:'c1',name:'Black Friday 2026',status:'active',start:'2026-03-01',end:'2026-03-31',budget:'R$ 15.000',posts:3,approved:1,pending:2,rejected:0,platforms:'ig,fb,tt',desc:'Foco em conversão.',createdAt:'2026-03-01T00:00:00Z'}]);
 }
 
-function initApp(){updateBadges();renderDashboard();}
 function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
-  APP.unsubs.push(DB.listen('posts',posts=>{LOCAL.set('posts',posts);updateBadges();if(['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'].includes(APP.currentPage))renderPage(APP.currentPage);}));
+  // FIX III: listener re-renders current page instantly when data changes from approval link
+  APP.unsubs.push(DB.listen('posts',posts=>{
+    LOCAL.set('posts',posts);
+    updateBadges();
+    const pages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
+    if(pages.includes(APP.currentPage)) renderPage(APP.currentPage);
+  }));
   APP.unsubs.push(DB.listen('accounts',accounts=>{LOCAL.set('accounts',accounts);updateBadges();if(APP.currentPage==='contas')renderContas();}));
   APP.unsubs.push(DB.listen('campaigns',camps=>{LOCAL.set('campaigns',camps);if(APP.currentPage==='campanhas')renderCampanhas();}));
 }
 
 // ── Navegação ─────────────────────────────────────────────────
 function showPage(page,btn){
-  // Posts submenu toggle
   if(page==='posts-menu'){
     const sub=el('posts-submenu');
     if(sub)sub.style.display=sub.style.display==='none'?'block':'none';
@@ -94,6 +114,8 @@ function showPage(page,btn){
   const sec=el('sec-'+page);if(sec)sec.classList.add('active');
   if(btn)btn.classList.add('active');
   APP.currentPage=page;
+  // FIX IV: persist page across refresh
+  localStorage.setItem('aha_page',page);
   const titles={dashboard:'Dashboard',contas:'Contas',agendamentos:'Agendamentos',posts:'Posts',analise:'Em Análise',aprovados:'Aprovados',rejeitados:'Rejeitados',campanhas:'Campanhas',trafego:'Tráfego Pago',workflow:'Workflow',revisao:'Revisão'};
   setText('pageTitle',titles[page]||page);
   if(window.innerWidth<960)el('sidebar').classList.remove('mobile-open');
@@ -101,15 +123,14 @@ function showPage(page,btn){
 }
 function renderPage(page){
   const r={
-    dashboard:renderDashboard,contas:renderContas,
+    dashboard:renderDashboard, contas:renderContas,
     agendamentos:renderAgendamentos,
     posts:()=>renderGrid('posts-grid',LOCAL.get('posts')),
     analise:()=>renderGrid('analise-grid',LOCAL.get('posts').filter(p=>p.status==='pending')),
     aprovados:()=>renderGrid('aprovados-grid',LOCAL.get('posts').filter(p=>p.status==='approved')),
     rejeitados:()=>renderGrid('rejeitados-grid',LOCAL.get('posts').filter(p=>p.status==='rejected')),
     revisao:()=>renderGrid('revisao-grid',LOCAL.get('posts').filter(p=>p.status==='review')),
-    campanhas:renderCampanhas,trafego:renderTrafego,
-    workflow:renderKanban,
+    campanhas:renderCampanhas, trafego:renderTrafego, workflow:renderKanban,
   };
   if(r[page])r[page]();
 }
@@ -170,11 +191,13 @@ function mkC(id,type,data,options={}){const c=el(id);if(!c)return;APP.charts[id]
 // ── Grid de posts ─────────────────────────────────────────────
 function renderGrid(cid,posts){const g=el(cid);if(!g)return;if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}g.innerHTML=posts.map(p=>postCard(p)).join('');}
 function postCard(p){
+  // FIX II: show client comment badge on card
+  const hasComment=p.clientComment&&p.clientComment.trim().length>0;
   return`<div class="post-card" onclick="openPostDetail('${p.id}')">
     <div class="post-card-thumb" style="position:relative;overflow:hidden;">${thumbBg(p)}
       <div style="position:absolute;top:8px;left:8px;z-index:1;"><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></div>
       <div style="position:absolute;top:8px;right:8px;z-index:1;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span></div>
-      ${p.type==='carousel'&&p.slides?.length?`<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">🎠 ${p.slides.length}</div>`:''}
+      ${hasComment?`<div style="position:absolute;bottom:6px;left:6px;z-index:1;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬 Comentário</div>`:''}
     </div>
     <div class="post-card-body"><div class="post-card-title">${esc(p.title)}</div><div class="post-card-meta">${p.date||'Sem data'} · ${PL[p.platform]||p.platform}</div>${p.campaign?`<div class="post-card-meta" style="margin-top:2px;">📋 ${esc(p.campaign)}</div>`:''}</div>
     <div class="post-card-footer">
@@ -190,27 +213,38 @@ function openPostDetail(id){
   const thumbEl=el('detail-thumb');
   if(thumbEl){
     if(p.type==='carousel'&&p.slides?.length){
-      // Carrossel preview
       thumbEl.innerHTML=`<div style="position:relative;">
         <div id="carousel-preview" style="overflow:hidden;border-radius:var(--radius);background:var(--surface2);">
-          ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:220px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;"/>`):(`<div style="height:180px;display:flex;align-items:center;justify-content:center;font-size:48px;">${s.thumb||'🖼️'}</div>`)}</div>`).join('')}
+          ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:220px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;"/>`):`<div style="height:180px;display:flex;align-items:center;justify-content:center;font-size:48px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
         </div>
         <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;">
-          ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:8px;height:8px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;transition:background .2s;" id="dot-${i}"></div>`).join('')}
+          ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:8px;height:8px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;" id="dot-${i}"></div>`).join('')}
         </div>
         <div style="text-align:center;margin-top:6px;font-size:11px;color:var(--text3);">🎠 Carrossel • <span id="carousel-current">1</span>/${p.slides.length} slides</div>
       </div>`;
       window._detailSlides=p.slides;
-      window._detailSlideIdx=0;
-    } else {
-      thumbEl.innerHTML=thumbFull(p);
-    }
+    } else { thumbEl.innerHTML=thumbFull(p); }
   }
   setText('detail-title',p.title);setText('detail-platform',PL[p.platform]||p.platform);
   setText('detail-date',p.date||'—');setText('detail-campaign',p.campaign||'—');
   setText('detail-type',p.type||'—');setText('detail-caption',p.caption||'Sem legenda.');
   const stEl=el('detail-status');if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
   const tagsEl=el('detail-tags');if(tagsEl)tagsEl.innerHTML=p.tags?p.tags.split(',').filter(Boolean).map(t=>`<span class="badge badge-gray" style="margin:2px;">#${esc(t.trim())}</span>`).join(''):'—';
+  // FIX II: show client comment in post detail
+  const commentBox=el('detail-client-comment');
+  if(commentBox){
+    if(p.clientComment&&p.clientComment.trim()){
+      commentBox.style.display='block';
+      commentBox.innerHTML=`<div style="background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:var(--radius-sm);padding:14px;margin-top:12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">💬 Comentário do Cliente</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;">${esc(p.clientComment)}</div>
+        ${p.reviewedAt?`<div style="font-size:10px;color:var(--text3);margin-top:6px;">📅 ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`:''}
+        ${p.reviewAction?`<div style="font-size:11px;font-weight:700;margin-top:4px;color:${p.reviewAction==='approve'?'var(--green)':p.reviewAction==='reject'?'var(--red)':'var(--yellow)'};">Ação: ${{approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'}[p.reviewAction]||p.reviewAction}</div>`:''}
+      </div>`;
+    } else {
+      commentBox.style.display='none';
+    }
+  }
   openModal('modalPostDetail');
 }
 
@@ -219,45 +253,43 @@ function showCarouselSlide(idx){
   document.querySelectorAll('.carousel-slide-preview').forEach((s,i)=>{s.style.display=i===idx?'block':'none';});
   document.querySelectorAll('[id^="dot-"]').forEach((d,i)=>{d.style.background=i===idx?'var(--primary)':'var(--border2)';});
   const curr=el('carousel-current');if(curr)curr.textContent=idx+1;
-  window._detailSlideIdx=idx;
 }
 
-// ── KANBAN WORKFLOW — Drag & Drop + Edit cols ─────────────────
-let _dragId=null, _dragCol=null;
-
+// ── KANBAN WORKFLOW — Drag & Drop ─────────────────────────────
+let _dragId=null,_dragCol=null;
 function saveKanbanCols(){localStorage.setItem('aha_kanban_cols',JSON.stringify(APP.kanbanCols));}
 
 function renderKanban(){
   const board=el('kanban-board');if(!board)return;
   const posts=LOCAL.get('posts');
-
-  // Map statuses to columns
+  // Map each post to a column based on status
   const grouped={};
   APP.kanbanCols.forEach(c=>grouped[c.id]=[]);
   posts.forEach(p=>{
     const col=APP.kanbanCols.find(c=>c.status===p.status||c.id===p.status);
-    const colId=col?col.id:'content';
+    const colId=col?col.id:(APP.kanbanCols[1]?.id||'content');
     if(!grouped[colId])grouped[colId]=[];
     grouped[colId].push(p);
   });
-
   board.innerHTML=APP.kanbanCols.map(col=>{
     const items=grouped[col.id]||[];
-    return `<div class="kanban-col" id="kcol-${col.id}"
-      ondragover="event.preventDefault();this.classList.add('drag-over')"
-      ondragleave="this.classList.remove('drag-over')"
+    return`<div class="kanban-col" id="kcol-${col.id}"
+      ondragover="event.preventDefault();el('kcol-${col.id}').classList.add('drag-over')"
+      ondragleave="el('kcol-${col.id}').classList.remove('drag-over')"
       ondrop="kanbanDrop(event,'${col.id}')">
       <div class="kanban-col-header" style="border-top:3px solid ${col.color};">
         <div class="kanban-col-title" style="color:${col.color};">
-          <span>${col.icon}</span>
+          ${col.icon}
           <span id="kcol-label-${col.id}" ondblclick="editKanbanColLabel('${col.id}')">${esc(col.label)}</span>
           <span class="kanban-col-count" style="background:${col.color}20;color:${col.color};">${items.length}</span>
         </div>
-        <button onclick="editKanbanCol('${col.id}')" style="background:none;border:none;cursor:pointer;font-size:14px;opacity:.5;padding:2px 4px;" title="Editar coluna">⚙️</button>
+        <button onclick="editKanbanCol('${col.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;opacity:.4;padding:2px 4px;" title="Editar coluna">⚙️</button>
       </div>
       <div class="kanban-col-body" id="kcol-body-${col.id}">
-        ${items.length?items.map(p=>kanbanCard(p,col)).join(''):
-          `<div style="text-align:center;padding:24px 12px;color:var(--text4);font-size:11px;font-weight:500;border:2px dashed var(--border);border-radius:8px;margin:8px;">Arraste posts aqui</div>`}
+        ${items.length
+          ? items.map(p=>kanbanCard(p,col)).join('')
+          : `<div style="text-align:center;padding:24px 12px;color:var(--text4);font-size:11px;border:2px dashed var(--border);border-radius:8px;margin:8px;">Arraste posts aqui</div>`
+        }
       </div>
     </div>`;
   }).join('');
@@ -265,19 +297,23 @@ function renderKanban(){
 
 function kanbanCard(p,col){
   const url=getFileUrl(p);
-  return `<div class="kanban-card" draggable="true"
-    id="kcard-${p.id}"
+  const hasComment=p.clientComment&&p.clientComment.trim();
+  return`<div class="kanban-card" draggable="true" id="kcard-${p.id}"
     ondragstart="kanbanDragStart(event,'${p.id}','${col.id}')"
     ondragend="kanbanDragEnd(event)"
-    ondragover="event.preventDefault();"
+    ondragover="event.preventDefault()"
     onclick="openPostDetail('${p.id}')">
-    ${url?`<div class="kanban-card-thumb">${isVideo(p)?`<div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>`}</div>`
-    :`<div style="height:60px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">${p.thumb||'📷'}</div>`}
+    ${url
+      ?`<div class="kanban-card-thumb">${isVideo(p)?`<div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>`}</div>`
+      :`<div style="height:60px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">${p.thumb||'📷'}</div>`
+    }
     <div class="kanban-card-title">${esc(p.title)}</div>
     <div class="kanban-card-meta">
       <span class="si ${PSI[p.platform]||''}" style="width:16px;height:16px;font-size:7px;">${PSH[p.platform]||'?'}</span>
       ${p.date?`<span>📅 ${p.date}</span>`:''}
+      ${hasComment?`<span title="${esc(p.clientComment)}" style="color:var(--blue);font-weight:700;">💬</span>`:''}
     </div>
+    ${hasComment?`<div style="font-size:10px;color:var(--text3);background:var(--blue-bg);border-radius:4px;padding:4px 7px;margin-top:6px;border-left:2px solid var(--blue);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">"${esc(p.clientComment)}"</div>`:''}
     <div class="kanban-card-actions" onclick="event.stopPropagation()">
       <button class="btn btn-xs btn-secondary" onclick="openPostEditor('${p.id}')">✏️</button>
       <button class="btn btn-xs btn-primary" onclick="openShareModal('${p.id}')">📤</button>
@@ -288,10 +324,9 @@ function kanbanCard(p,col){
 
 function kanbanDragStart(e,postId,colId){
   _dragId=postId;_dragCol=colId;
-  e.dataTransfer.setData('text/plain', postId);
+  e.dataTransfer.setData('text/plain',postId);
   e.dataTransfer.effectAllowed='move';
-  const card=el('kcard-'+postId);
-  if(card){setTimeout(()=>{card.classList.add('dragging');},0);}
+  setTimeout(()=>{const c=el('kcard-'+postId);if(c)c.classList.add('dragging');},0);
 }
 function kanbanDragEnd(e){
   if(_dragId){const c=el('kcard-'+_dragId);if(c)c.classList.remove('dragging');}
@@ -302,27 +337,18 @@ function kanbanDrop(e,targetColId){
   e.preventDefault();e.stopPropagation();
   const col=el('kcol-'+targetColId);if(col)col.classList.remove('drag-over');
   const postId=e.dataTransfer.getData('text/plain')||_dragId;
-  if(!postId)return;
-  if(_dragCol===targetColId)return;
+  if(!postId||_dragCol===targetColId)return;
   const targetCol=APP.kanbanCols.find(c=>c.id===targetColId);
   if(!targetCol)return;
-  const newStatus=targetCol.status||targetColId;
   const post=LOCAL.find('posts',postId);
+  const newStatus=targetCol.status||targetColId;
   LOCAL.update('posts',postId,{status:newStatus});
   DB.update('posts',postId,{status:newStatus});
   updateBadges();
   // Som de click
-  try{
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const o=ctx.createOscillator();const g=ctx.createGain();
-    o.connect(g);g.connect(ctx.destination);
-    o.type='sine';o.frequency.value=800;
-    g.gain.setValueAtTime(0.2,ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);
-    o.start(ctx.currentTime);o.stop(ctx.currentTime+0.12);
-  }catch(err){}
+  try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=800;g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);o.start();o.stop(ctx.currentTime+0.12);}catch{}
   toast(`✅ "${post?.title||''}" → ${targetCol.label}`,'success');
-  setTimeout(()=>renderKanban(),100);
+  setTimeout(()=>renderKanban(),80);
 }
 
 function editKanbanColLabel(colId){
@@ -331,41 +357,25 @@ function editKanbanColLabel(colId){
   const input=document.createElement('input');
   input.value=col.label;
   input.style.cssText='font-size:12px;font-weight:700;border:1px solid var(--primary);border-radius:4px;padding:2px 6px;width:120px;font-family:inherit;';
-  labelEl.replaceWith(input);
-  input.focus();input.select();
-  const save=()=>{
-    const newLabel=input.value.trim()||col.label;
-    col.label=newLabel;saveKanbanCols();
-    const span=document.createElement('span');
-    span.id='kcol-label-'+colId;span.textContent=newLabel;
-    span.ondblclick=()=>editKanbanColLabel(colId);
-    input.replaceWith(span);
-  };
+  labelEl.replaceWith(input);input.focus();input.select();
+  const save=()=>{col.label=input.value.trim()||col.label;saveKanbanCols();const span=document.createElement('span');span.id='kcol-label-'+colId;span.textContent=col.label;span.ondblclick=()=>editKanbanColLabel(colId);input.replaceWith(span);};
   input.addEventListener('blur',save);
   input.addEventListener('keydown',e=>{if(e.key==='Enter')save();if(e.key==='Escape'){input.value=col.label;save();}});
 }
 
 function editKanbanCol(colId){
   const col=APP.kanbanCols.find(c=>c.id===colId);if(!col)return;
-  // Open edit modal
   const colors=['#64748B','#2563EB','#7C3AED','#D97706','#16A34A','#EA580C','#DC2626','#0891B2','#DB2777'];
-  const html=`
-  <div style="padding:20px;">
+  const html=`<div style="padding:20px;">
     <div style="font-size:16px;font-weight:800;margin-bottom:16px;">⚙️ Editar Coluna</div>
-    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Nome</label>
-      <input id="kcol-edit-name" value="${esc(col.label)}" style="width:100%;margin-top:6px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;"/>
-    </div>
-    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Ícone</label>
-      <input id="kcol-edit-icon" value="${col.icon}" style="width:100%;margin-top:6px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:16px;"/>
-    </div>
+    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Nome</label><input id="kcol-edit-name" value="${esc(col.label)}" style="width:100%;margin-top:6px;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;"/></div>
+    <div style="margin-bottom:12px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Ícone</label><input id="kcol-edit-icon" value="${col.icon}" style="width:100%;margin-top:6px;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:16px;"/></div>
     <div style="margin-bottom:16px;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);">Cor</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${colors.map(c=>`<div onclick="document.querySelectorAll('.col-color-opt').forEach(x=>x.style.outline='none');this.style.outline='3px solid #000';el('kcol-edit-color').value='${c}';" class="col-color-opt" style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;outline:${c===col.color?'3px solid #000':'none'};transition:transform .15s;" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></div>`).join('')}
-      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">${colors.map(c=>`<div onclick="document.querySelectorAll('.col-color-opt').forEach(x=>x.style.outline='none');this.style.outline='3px solid #000';el('kcol-edit-color').value='${c}';" class="col-color-opt" style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;outline:${c===col.color?'3px solid #000':'none'};"></div>`).join('')}</div>
       <input type="hidden" id="kcol-edit-color" value="${col.color}"/>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button onclick="this.closest('.modal-overlay').classList.remove('open');document.body.style.overflow='';" class="btn btn-secondary">Cancelar</button>
+      <button onclick="document.getElementById('modalKanbanEdit').classList.remove('open');document.body.style.overflow='';" class="btn btn-secondary">Cancelar</button>
       <button onclick="saveKanbanColEdit('${colId}')" class="btn btn-primary">Salvar</button>
     </div>
   </div>`;
@@ -374,7 +384,6 @@ function editKanbanCol(colId){
   else{overlay.querySelector('.modal').innerHTML=html;}
   overlay.classList.add('open');document.body.style.overflow='hidden';
 }
-
 function saveKanbanColEdit(colId){
   const col=APP.kanbanCols.find(c=>c.id===colId);if(!col)return;
   col.label=v('kcol-edit-name').trim()||col.label;
@@ -382,8 +391,7 @@ function saveKanbanColEdit(colId){
   col.color=el('kcol-edit-color')?.value||col.color;
   saveKanbanCols();
   const overlay=el('modalKanbanEdit');if(overlay){overlay.classList.remove('open');document.body.style.overflow='';}
-  renderKanban();
-  toast('✅ Coluna atualizada!','success');
+  renderKanban();toast('✅ Coluna atualizada!','success');
 }
 
 // ── AGENDAMENTOS ──────────────────────────────────────────────
@@ -409,8 +417,7 @@ function applyAgendView(view){
 function renderAgendList(posts){
   const tbody=el('agend-list');if(!tbody)return;
   if(!posts.length){tbody.innerHTML=`<tr><td colspan="6">${emptyS('📅','Nenhum agendamento','Clique em "+ Novo Agendamento".')}</td></tr>`;return;}
-  tbody.innerHTML=posts.map(p=>`
-  <tr onclick="openPostDetail('${p.id}')" style="cursor:pointer;">
+  tbody.innerHTML=posts.map(p=>`<tr onclick="openPostDetail('${p.id}')" style="cursor:pointer;">
     <td style="display:flex;align-items:center;gap:10px;min-width:0;">${thumbInline(p,40)}<span class="td-primary" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.title)}</span></td>
     <td><span class="badge ${SB[p.status]||'badge-gray'}">${SL[p.status]||p.status}</span></td>
     <td><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></td>
@@ -424,8 +431,8 @@ function renderAgendList(posts){
   </tr>`).join('');
 }
 
-// ── CALENDÁRIO — estilo Hootsuite com thumbnails ──────────────
-let _calYear=null, _calMonth=null;
+// ── CALENDÁRIO — estilo Hootsuite com miniaturas ──────────────
+let _calYear=null,_calMonth=null;
 
 function renderCalendar(cid,posts,yr,mo){
   const c=el(cid);if(!c)return;
@@ -438,75 +445,71 @@ function renderCalendar(cid,posts,yr,mo){
   const fd=new Date(Y,M,1).getDay(),dim=new Date(Y,M+1,0).getDate();
   const td=now.getDate(),tm=now.getMonth(),ty=now.getFullYear();
 
-  // Month dropdown
-  const monthDropdown=`<div style="position:relative;display:inline-block;">
-    <button class="btn btn-secondary" onclick="toggleMonthDropdown('${cid}')" style="font-weight:700;min-width:170px;justify-content:center;gap:6px;font-size:14px;">
-      📅 ${MN[M]} ${Y} <span style="opacity:.6;">▾</span>
+  const monthBtn=`<div style="position:relative;display:inline-block;">
+    <button onclick="toggleMonthDropdown('${cid}')" style="display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-weight:700;color:var(--text);cursor:pointer;font-family:inherit;">
+      ${MN[M]} ${Y} <span style="font-size:11px;opacity:.5;">▾</span>
     </button>
-    <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:200;width:220px;padding:8px;max-height:320px;overflow-y:auto;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-        ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}')" style="padding:8px 10px;cursor:pointer;border-radius:8px;font-size:12px;font-weight:${i===M?'800':'500'};color:${i===M?'#fff':'var(--text2)'};background:${i===M?'var(--primary)':'transparent'};text-align:center;transition:all .15s;" onmouseover="if(${i}!==${M})this.style.background='var(--surface2)'" onmouseout="if(${i}!==${M})this.style.background='transparent'">${mn}</div>`).join('')}
+    <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:300;width:240px;padding:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;">
+        ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}')" style="padding:8px;text-align:center;cursor:pointer;border-radius:7px;font-size:12px;font-weight:${i===M?'800':'500'};color:${i===M?'#fff':'var(--text2)'};background:${i===M?'var(--primary)':'transparent'};transition:all .12s;" onmouseover="if(${i}!==${M})this.style.background='var(--surface2)'" onmouseout="if(${i}!==${M})this.style.background='transparent'">${mn}</div>`).join('')}
       </div>
-      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;padding:8px 4px 0;">
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y-1},${M});toggleMonthDropdown('${cid}')" class="btn btn-sm btn-secondary" style="font-size:11px;">← ${Y-1}</button>
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y+1},${M});toggleMonthDropdown('${cid}')" class="btn btn-sm btn-secondary" style="font-size:11px;">${Y+1} →</button>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y-1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">← ${Y-1}</button>
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">Hoje</button>
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y+1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">${Y+1} →</button>
       </div>
     </div>
   </div>`;
 
-  let h=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);">
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface);">
+  let h=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})" style="width:32px;height:32px;padding:0;justify-content:center;">‹</button>
-        ${monthDropdown}
-        <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})" style="width:32px;height:32px;padding:0;justify-content:center;">›</button>
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">‹</button>
+        ${monthBtn}
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">›</button>
       </div>
-      <button class="btn btn-sm btn-secondary" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()})">Hoje</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;color:var(--text3);">${posts.length} post${posts.length!==1?'s':''} no mês</span>
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()})" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Hoje</button>
+      </div>
     </div>
-    <!-- Dias da semana -->
     <div style="display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface2);border-bottom:1px solid var(--border);">
-      ${DN.map(d=>`<div style="padding:10px 8px;text-align:center;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;">${d}</div>`).join('')}
+      ${DN.map(d=>`<div style="padding:10px 0;text-align:center;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;">${d}</div>`).join('')}
     </div>
-    <!-- Grid de dias -->
     <div style="display:grid;grid-template-columns:repeat(7,1fr);">`;
 
-  for(let i=0;i<fd;i++) h+=`<div style="min-height:110px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface2);opacity:.4;"></div>`;
+  for(let i=0;i<fd;i++) h+=`<div style="min-height:120px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface2);opacity:.5;"></div>`;
 
   for(let d=1;d<=dim;d++){
     const isT=d===td&&M===tm&&Y===ty;
     const ds=`${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dp=posts.filter(p=>p.date===ds);
-    const dayBg=isT?'var(--primary-light)':'var(--surface)';
-    const dayBorder=isT?'2px solid var(--primary)':'1px solid var(--border)';
-
-    h+=`<div style="min-height:110px;border-right:${dayBorder};border-bottom:${dayBorder};background:${dayBg};cursor:pointer;transition:background .15s;vertical-align:top;padding:0;" onclick="calClick('${cid}','${ds}')" onmouseover="if(!this.dataset.today)this.style.background='var(--surface2)'" onmouseout="if(!this.dataset.today)this.style.background='${dayBg}'" ${isT?'data-today="1"':''}>
-      <!-- Número do dia -->
-      <div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;">
-        <span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:${isT?'800':'500'};color:${isT?'#fff':'var(--text2)'};background:${isT?'var(--primary)':'transparent'};border-radius:50%;">${d}</span>
-        ${dp.length>0?`<span style="font-size:9px;font-weight:700;color:var(--text3);">${dp.length} post${dp.length>1?'s':''}</span>`:''}
+    h+=`<div style="min-height:120px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:${isT?'var(--primary-light)':'var(--surface)'};cursor:pointer;transition:background .12s;position:relative;" onclick="calClick('${cid}','${ds}')" onmouseover="this.style.background='${isT?'var(--primary-light)':'var(--surface2)'}'" onmouseout="this.style.background='${isT?'var(--primary-light)':'var(--surface)'}'">
+      <div style="padding:6px 8px 4px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:${isT?'800':'500'};color:${isT?'#fff':'var(--text2)'};background:${isT?'var(--primary)':'transparent'};border-radius:50%;flex-shrink:0;">${d}</span>
+        ${dp.length?`<span style="font-size:9px;font-weight:700;color:var(--primary);background:var(--primary-light);border-radius:10px;padding:1px 6px;">${dp.length}</span>`:''}
       </div>
-      <!-- Posts do dia -->
-      <div style="padding:0 4px 4px;display:flex;flex-direction:column;gap:3px;">
-        ${dp.slice(0,2).map(p=>{
+      <div style="padding:0 4px 6px;display:flex;flex-direction:column;gap:3px;">
+        ${dp.slice(0,3).map(p=>{
           const pUrl=getFileUrl(p);
-          const statusColor=p.status==='approved'?'#16A34A':p.status==='rejected'?'#DC2626':p.status==='pending'?'#D97706':'#64748B';
-          return `<div onclick="event.stopPropagation();openPostDetail('${p.id}')" style="cursor:pointer;border-radius:6px;overflow:hidden;border:1.5px solid ${statusColor};background:#fff;transition:transform .15s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+          const statusColor=p.status==='approved'?'#16A34A':p.status==='rejected'?'#DC2626':p.status==='pending'?'#D97706':p.status==='review'?'#7C3AED':'#64748B';
+          return`<div onclick="event.stopPropagation();openPostDetail('${p.id}')" style="cursor:pointer;border-radius:6px;overflow:hidden;border-left:3px solid ${statusColor};background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:transform .1s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" title="${esc(p.title)}">
             ${pUrl&&!isVideo(p)
-              ?`<img src="${pUrl}" style="width:100%;height:52px;object-fit:cover;display:block;" loading="lazy"/>`
+              ?`<img src="${pUrl}" style="width:100%;height:48px;object-fit:cover;display:block;" loading="lazy"/>`
               :isVideo(p)
-                ?`<div style="height:52px;background:#000;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`
-                :`<div style="height:52px;background:linear-gradient(135deg,${statusColor}22,${statusColor}11);display:flex;align-items:center;justify-content:center;font-size:20px;">${p.thumb||'📷'}</div>`
+                ?`<div style="height:48px;background:#111;display:flex;align-items:center;justify-content:center;font-size:16px;">▶️</div>`
+                :`<div style="height:36px;background:${statusColor}18;display:flex;align-items:center;justify-content:center;font-size:16px;">${p.thumb||'📷'}</div>`
             }
-            <div style="padding:3px 5px;background:#fff;">
+            <div style="padding:3px 6px 4px;background:#fff;">
               <div style="display:flex;align-items:center;gap:3px;">
-                <span class="si ${PSI[p.platform]||''}" style="width:12px;height:12px;font-size:5px;border-radius:3px;">${PSH[p.platform]||'?'}</span>
+                <span class="si ${PSI[p.platform]||''}" style="width:11px;height:11px;font-size:5px;border-radius:2px;flex-shrink:0;">${PSH[p.platform]||'?'}</span>
                 <span style="font-size:9px;font-weight:600;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(p.title)}</span>
+                ${p.clientComment?`<span style="color:var(--blue);font-size:9px;" title="Tem comentário do cliente">💬</span>`:''}
               </div>
             </div>
           </div>`;
         }).join('')}
-        ${dp.length>2?`<div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:2px;cursor:pointer;" onclick="event.stopPropagation();toast('${dp.length} posts em ${ds}','info')">+${dp.length-2} mais</div>`:''}
+        ${dp.length>3?`<div onclick="event.stopPropagation();toast('${dp.length} posts em ${ds}','info')" style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:2px;cursor:pointer;">+${dp.length-3} mais</div>`:''}
       </div>
     </div>`;
   }
@@ -516,25 +519,17 @@ function renderCalendar(cid,posts,yr,mo){
 
 function toggleMonthDropdown(cid){
   const dd=el('month-dropdown-'+cid);if(!dd)return;
-  const isOpen=dd.style.display!=='none';
-  dd.style.display=isOpen?'none':'block';
-  if(!isOpen){
+  const open=dd.style.display!=='none';
+  dd.style.display=open?'none':'block';
+  if(!open){
     setTimeout(()=>{
-      const close=(e)=>{
-        if(!dd.contains(e.target)&&!e.target.closest(`[onclick*="toggleMonthDropdown"]`)){
-          dd.style.display='none';document.removeEventListener('click',close);
-        }
-      };
-      document.addEventListener('click',close);
+      document.addEventListener('click',function close(e){
+        if(!dd.contains(e.target)&&!e.target.closest('button')){dd.style.display='none';document.removeEventListener('click',close);}
+      });
     },100);
   }
 }
-
-function openCalendarPostEdit(id){openPostEditor(id);}
-
-function calClick(cid,ds){
-  if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}
-}
+function calClick(cid,ds){if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}}
 
 // ── Upload ────────────────────────────────────────────────────
 function triggerFile(inputId){el(inputId)?.click();}
@@ -544,12 +539,12 @@ async function onDrop(e,previewId,dataId){e.preventDefault();e.stopPropagation()
 async function onFileChange(inputId,previewId,dataId){const input=el(inputId);if(!input||!input.files[0])return;await processFile(input.files[0],previewId,dataId);input.value='';}
 async function processFile(file,previewId,dataId){
   const isImg=file.type.startsWith('image/'),isVid=file.type.startsWith('video/');
-  if(!isImg&&!isVid){toast('Use PNG, JPG, GIF ou MP4.','warning');return;}
+  if(!isImg&&!isVid){toast('Use PNG, JPG ou MP4.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
   if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:10px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando...</div></div>`;
   try{
     if(isImg){const compressed=await compressImage(file);if(dataEl)dataEl.value=compressed;if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;toast(`✅ ${file.name} carregado!`,'success');}
-    else{const thumb=await videoThumbnail(file);if(dataEl)dataEl.value=JSON.stringify({thumb,type:'video',name:file.name,isVideo:true});if(prev)prev.innerHTML=`<div style="position:relative;height:120px;background:#000;border-radius:var(--radius);overflow:hidden;"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;opacity:.7;"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div></div>`;toast(`✅ Vídeo "${file.name}" carregado!`,'success');}
+    else{const thumb=await videoThumbnail(file);if(dataEl)dataEl.value=JSON.stringify({thumb,type:'video',name:file.name,isVideo:true});if(prev)prev.innerHTML=`<div style="position:relative;height:120px;background:#000;border-radius:var(--radius);overflow:hidden;"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;opacity:.7;"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div></div>`;toast(`✅ Vídeo carregado!`,'success');}
   }catch(e){toast('Erro: '+e.message,'error');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div>`;}
 }
 function compressImage(file){
@@ -557,7 +552,7 @@ function compressImage(file){
     if(file.size>15*1024*1024){reject(new Error('Máx. 15MB.'));return;}
     const img=new Image(),url=URL.createObjectURL(file);
     img.onload=()=>{const MAX=900;let w=img.width,h=img.height;if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}if(h>MAX){w=Math.round(w*MAX/h);h=MAX;}const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(img,0,0,w,h);URL.revokeObjectURL(url);resolve(canvas.toDataURL('image/jpeg',0.78));};
-    img.onerror=()=>reject(new Error('Não foi possível ler a imagem.'));img.src=url;
+    img.onerror=()=>reject(new Error('Não foi possível ler.'));img.src=url;
   });
 }
 function videoThumbnail(file){
@@ -569,40 +564,20 @@ function videoThumbnail(file){
   });
 }
 
-// ── CARROSSEL — upload múltiplos slides ───────────────────────
+// ── Carrossel ─────────────────────────────────────────────────
 let _carouselSlides=[];
-
-function initCarouselSlides(existing){
-  _carouselSlides=existing||[];
-  renderCarouselSlots();
-}
-
+function initCarouselSlides(existing){_carouselSlides=existing||[];renderCarouselSlots();}
 function renderCarouselSlots(){
   const cont=el('carousel-slots');if(!cont)return;
-  const maxSlides=6;
-  let html='';
+  const maxSlides=6;let html='';
   for(let i=0;i<maxSlides;i++){
     const s=_carouselSlides[i];
-    if(s){
-      html+=`<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--primary);">
-        <div style="height:80px;background:var(--surface2);">
-          ${s.fileUrl?(s.fileType==='video'?`<div style="height:80px;background:#000;display:flex;align-items:center;justify-content:center;font-size:20px;">▶️</div>`:`<img src="${s.fileUrl}" style="width:100%;height:80px;object-fit:cover;"/>`):`<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;">${s.thumb||'🖼️'}</div>`}
-        </div>
-        <div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:3px;background:var(--primary-light);">Slide ${i+1}</div>
-        <button onclick="removeCarouselSlide(${i})" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>`;
-    } else {
-      html+=`<label style="height:108px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--text3);gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''">
-        <span style="font-size:22px;">➕</span>
-        <span style="font-weight:600;">Slide ${i+1}</span>
-        <input type="file" accept="image/*,video/*" style="display:none;" onchange="addCarouselSlide(event,${i})"/>
-      </label>`;
-    }
+    if(s){html+=`<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--primary);"><div style="height:80px;background:var(--surface2);">${s.fileUrl?(s.fileType==='video'?`<div style="height:80px;background:#000;display:flex;align-items:center;justify-content:center;font-size:20px;">▶️</div>`:`<img src="${s.fileUrl}" style="width:100%;height:80px;object-fit:cover;"/>`):`<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;">${s.thumb||'🖼️'}</div>`}</div><div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:3px;background:var(--primary-light);">Slide ${i+1}</div><button onclick="removeCarouselSlide(${i})" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;">✕</button></div>`;}
+    else{html+=`<label style="height:108px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--text3);gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''"><span style="font-size:22px;">➕</span><span style="font-weight:600;">Slide ${i+1}</span><input type="file" accept="image/*,video/*" style="display:none;" onchange="addCarouselSlide(event,${i})"/></label>`;}
   }
   cont.innerHTML=html;
   const counter=el('carousel-count');if(counter)counter.textContent=`${_carouselSlides.length}/${maxSlides} slides`;
 }
-
 async function addCarouselSlide(e,idx){
   const file=e.target.files[0];if(!file)return;
   try{
@@ -610,17 +585,12 @@ async function addCarouselSlide(e,idx){
     if(file.type.startsWith('image/')){fileUrl=await compressImage(file);fileType='image';}
     else{const t=await videoThumbnail(file);fileUrl=t;fileType='video';}
     _carouselSlides[idx]={fileUrl,fileType,thumb:'🖼️',caption:''};
-    renderCarouselSlots();
-    toast(`✅ Slide ${idx+1} adicionado!`,'success');
+    renderCarouselSlots();toast(`✅ Slide ${idx+1} adicionado!`,'success');
   }catch(err){toast('Erro: '+err.message,'error');}
 }
+function removeCarouselSlide(idx){_carouselSlides.splice(idx,1);renderCarouselSlots();}
 
-function removeCarouselSlide(idx){
-  _carouselSlides.splice(idx,1);
-  renderCarouselSlots();
-}
-
-// ── Novo Agendamento ──────────────────────────────────────────
+// ── Modal Agendamento ─────────────────────────────────────────
 function openNewAgendamento(){
   APP.editingId=null;
   ['ag-title','ag-date','ag-caption','ag-tags'].forEach(id=>sv(id,''));
@@ -628,57 +598,34 @@ function openNewAgendamento(){
   const prev=el('ag-file-preview');
   if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
   sv('ag-file-data','');
-  resetTipoBtns();
-  _carouselSlides=[];
-  toggleCarouselSection('image');
-  setText('modalAgendTitulo','📅 Novo Agendamento');
-  openModal('modalAgendamento');
+  resetTipoBtns();_carouselSlides=[];toggleCarouselSection('image');
+  setText('modalAgendTitulo','📅 Novo Agendamento');openModal('modalAgendamento');
 }
-
 function openPostEditor(id){
-  const p=LOCAL.find('posts',id);if(!p)return;
-  APP.editingId=id;
+  const p=LOCAL.find('posts',id);if(!p)return;APP.editingId=id;
   sv('ag-title',p.title||'');sv('ag-platform',p.platform||'ig');sv('ag-date',p.date||'');
   sv('ag-campaign',p.campaign||'');sv('ag-caption',p.caption||'');sv('ag-tags',p.tags||'');sv('ag-status',p.status||'pending');
-  document.querySelectorAll('.tipo-btn').forEach(b=>{
-    b.classList.remove('active');b.style.cssText='';
-    if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
-  });
+  document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
   toggleCarouselSection(p.type||'image');
-  if(p.type==='carousel'&&p.slides){_carouselSlides=[...p.slides];renderCarouselSlots();}
-  else{_carouselSlides=[];}
+  if(p.type==='carousel'&&p.slides){_carouselSlides=[...p.slides];renderCarouselSlots();}else{_carouselSlides=[];}
   const prev=el('ag-file-preview'),url=getFileUrl(p);
   if(url&&prev&&p.type!=='carousel'){
     if(isVideo(p))prev.innerHTML=`<div style="height:120px;background:#000;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div>`;
     else prev.innerHTML=`<img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
     sv('ag-file-data',p.fileUrl||'');
-  }else if(prev){
-    prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div>`;
-    sv('ag-file-data','');
-  }
-  setText('modalAgendTitulo','✏️ Editar Post');
-  closeModal('modalPostDetail');
-  openModal('modalAgendamento');
+  }else if(prev){prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div>`;sv('ag-file-data','');}
+  setText('modalAgendTitulo','✏️ Editar Post');closeModal('modalPostDetail');openModal('modalAgendamento');
 }
-
 function toggleCarouselSection(tipo){
   const cs=el('carousel-section'),fs=el('file-section');
   if(tipo==='carousel'){if(cs)cs.style.display='block';if(fs)fs.style.display='none';}
   else{if(cs)cs.style.display='none';if(fs)fs.style.display='block';}
 }
-
 function resetTipoBtns(){
-  document.querySelectorAll('.tipo-btn').forEach((b,i)=>{
-    b.classList.remove('active');b.style.cssText='';
-    if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
-  });
+  document.querySelectorAll('.tipo-btn').forEach((b,i)=>{b.classList.remove('active');b.style.cssText='';if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
   toggleCarouselSection('image');
 }
-function selectTipo(btn){
-  document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';});
-  btn.classList.add('active');btn.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';
-  toggleCarouselSection(btn.dataset.tipo);
-}
+function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';});btn.classList.add('active');btn.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';toggleCarouselSection(btn.dataset.tipo);}
 
 async function saveAgendamento(){
   const title=v('ag-title')?.trim(),platform=v('ag-platform');
@@ -686,40 +633,26 @@ async function saveAgendamento(){
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
   const fileRaw=v('ag-file-data');
   let fileUrl=null,fileType='image';
-  if(fileRaw){
-    if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}
-    else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}
-  }
+  if(fileRaw){if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}}
   if(APP.editingId&&!fileRaw&&tipo!=='carousel'){const orig=LOCAL.find('posts',APP.editingId);if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}}
-  const data={
-    title,platform,date:v('ag-date')||'',campaign:v('ag-campaign')?.trim()||'',
-    caption:v('ag-caption')?.trim()||'',tags:v('ag-tags')?.trim()||'',
-    status:v('ag-status')||'pending',type:tipo,fileUrl,fileType,
-    thumb:fileUrl?null:(TEMO[tipo]||'📸'),
-    slides:tipo==='carousel'?[..._carouselSlides]:undefined,
-  };
+  const data={title,platform,date:v('ag-date')||'',campaign:v('ag-campaign')?.trim()||'',caption:v('ag-caption')?.trim()||'',tags:v('ag-tags')?.trim()||'',status:v('ag-status')||'pending',type:tipo,fileUrl,fileType,thumb:fileUrl?null:(TEMO[tipo]||'📸'),slides:tipo==='carousel'?[..._carouselSlides]:undefined};
   closeModal('modalAgendamento');
   if(APP.editingId){LOCAL.update('posts',APP.editingId,data);DB.update('posts',APP.editingId,data);toast('Post atualizado! ✅','success');APP.editingId=null;}
   else{LOCAL.add('posts',data);DB.add('posts',data);toast('Agendamento criado! 🗓️','success');}
   updateBadges();
-  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
-  else renderPage(APP.currentPage);
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
   updateCampaignCounts();
 }
 async function saveDraft(){const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
-  LOCAL.remove('posts',id);DB.remove('posts',id);
-  updateBadges();toast('Post excluído.','info');
-  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
-  else renderPage(APP.currentPage);
+  LOCAL.remove('posts',id);DB.remove('posts',id);updateBadges();toast('Post excluído.','info');
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
 }
 function doChangeStatus(id,ns){
-  LOCAL.update('posts',id,{status:ns});DB.update('posts',id,{status:ns});
-  updateBadges();closeModal('modalPostDetail');
+  LOCAL.update('posts',id,{status:ns});DB.update('posts',id,{status:ns});updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
-  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
-  else renderPage(APP.currentPage);
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
   updateCampaignCounts();
 }
 function updateCampaignCounts(){
@@ -727,12 +660,12 @@ function updateCampaignCounts(){
   LOCAL.get('campaigns').forEach(c=>{const cp=posts.filter(p=>p.campaign===c.name);const upd={posts:cp.length,approved:cp.filter(p=>p.status==='approved').length,pending:cp.filter(p=>p.status==='pending').length,rejected:cp.filter(p=>p.status==='rejected').length};LOCAL.update('campaigns',c.id,upd);DB.update('campaigns',c.id,upd);});
 }
 
-// ── SHARE ─────────────────────────────────────────────────────
+// ── Share ─────────────────────────────────────────────────────
 function openShareModal(id){
   const p=LOCAL.find('posts',id);if(!p)return;
   const link=window.location.origin+window.location.pathname.replace('index.html','')+'?approval='+id;
   sv('share-link-input',link);
-  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Segue o link para aprovação do criativo:\n\n*'+p.title+'*\n\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
+  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Link para aprovação:\n\n*'+p.title+'*\n\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
   el('share-email').href=`mailto:?subject=Aprovação — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Acesse:\n\n'+link)}`;
   openModal('modalShare');
 }
@@ -743,26 +676,17 @@ function openApprovalTab(){const link=v('share-link-input');if(link)window.open(
 function setupApprovalPage(){
   const id=new URLSearchParams(window.location.search).get('approval');
   if(!id)return;
-
   const hideAll=()=>{
     const lp=el('loginPage');if(lp)lp.style.display='none';
     const ap2=el('app');if(ap2)ap2.style.display='none';
     const ap=el('approvalPage');if(ap)ap.style.display='block';
   };
-
-  // Executa imediatamente se DOM já carregou, senão aguarda
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});
-  } else {
-    // DOM já carregado — executa diretamente
-    hideAll();
-    loadApprovalPost(id);
-  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});}
+  else{hideAll();loadApprovalPost(id);}
 }
 
 async function loadApprovalPost(id){
   initFirebase();
-  // Wait a moment for Firebase to init
   await new Promise(r=>setTimeout(r,600));
   let p=LOCAL.find('posts',id);
   if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
@@ -772,72 +696,45 @@ async function loadApprovalPost(id){
     if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou foi removido.</p></div></div>`;
     return;
   }
+  window._approvalId=id;window._approvalPost=p;
 
-  window._approvalId=id;
-  window._approvalPost=p;
-
-  // Preenche preview do arquivo
   const thumbEl=el('ap-thumb');
   if(thumbEl){
     const url=getFileUrl(p);
     if(p.type==='carousel'&&p.slides?.length){
-      // Carrossel
-      thumbEl.innerHTML=`<div>
-        <div id="ap-carousel" style="background:var(--surface2);border-radius:var(--radius);overflow:hidden;min-height:200px;">
-          ${p.slides.map((s,i)=>`<div class="ap-slide" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:350px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:350px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
-        </div>
-        <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;">
-          <button onclick="apCarouselNav(-1)" class="btn btn-secondary btn-sm">‹ Anterior</button>
-          <span id="ap-carousel-counter" style="font-size:12px;font-weight:700;color:var(--text3);">1/${p.slides.length}</span>
-          <button onclick="apCarouselNav(1)" class="btn btn-secondary btn-sm">Próximo ›</button>
-        </div>
-      </div>`;
+      thumbEl.innerHTML=`<div><div id="ap-carousel" style="background:var(--surface2);border-radius:var(--radius);overflow:hidden;min-height:200px;">${p.slides.map((s,i)=>`<div class="ap-slide" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:350px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:350px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}</div><div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;"><button onclick="apCarouselNav(-1)" class="btn btn-secondary btn-sm">‹ Anterior</button><span id="ap-carousel-counter" style="font-size:12px;font-weight:700;color:var(--text3);">1/${p.slides.length}</span><button onclick="apCarouselNav(1)" class="btn btn-secondary btn-sm">Próximo ›</button></div></div>`;
       window._apSlideIdx=0;window._apSlides=p.slides;
-    } else if(url&&!isVideo(p)){
-      thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;
-    } else if(url&&isVideo(p)){
-      thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;
-    } else {
-      thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;
-    }
+    }else if(url&&!isVideo(p)){thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;}
+    else if(url&&isVideo(p)){thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;}
+    else{thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;}
   }
 
-  setText('ap-title',p.title);
-  setText('ap-platform',PL[p.platform]||p.platform);
-  setText('ap-date',p.date||'—');
-  setText('ap-campaign',p.campaign||'—');
+  setText('ap-title',p.title);setText('ap-platform',PL[p.platform]||p.platform);
+  setText('ap-date',p.date||'—');setText('ap-campaign',p.campaign||'—');
   setText('ap-caption',p.caption||'Sem legenda.');
   const stEl=el('ap-status');
   if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
+
+  // Restaura comentário anterior
   if(p.clientComment){const ce=el('ap-comment');if(ce)ce.value=p.clientComment;}
 
-  // Preenche selector de workflow
+  // Preenche workflow selector
   const wfSel=el('ap-workflow-select');
   if(wfSel){
     wfSel.innerHTML=`<option value="">— Selecionar coluna —</option>`+
       APP.kanbanCols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
   }
 
-  // Preenche comentário anterior do cliente
-  if(p.clientComment){
-    const ce=el('ap-comment');
-    if(ce){ce.value=p.clientComment;}
-  }
-
-  // Mostra histórico da última ação
+  // Histórico da última ação
   const prevDiv=el('ap-prev-action');
   if(prevDiv){
     if(p.reviewAction&&p.reviewedAt){
       const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
       prevDiv.style.display='block';
-      prevDiv.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--text3);">Última ação: <strong>${msgs[p.reviewAction]||p.reviewAction}</strong> em ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`;
-      // Desabilita botões se já foi revisado
+      prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong style="color:var(--text)">${msgs[p.reviewAction]||p.reviewAction}</strong> em ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`;
       document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
-    } else {
-      prevDiv.style.display='none';
-    }
+    }else{prevDiv.style.display='none';}
   }
-
   if(p.status!=='pending'&&p.status!=='draft'){showApprovalResult(p.status);}
 }
 
@@ -851,8 +748,8 @@ function apCarouselNav(dir){
 
 function showApprovalResult(status){
   const resultDiv=el('ap-result');if(!resultDiv)return;
-  const cfg={approved:{bg:'#F0FDF4',color:'#16A34A',icon:'✅',text:'Este criativo foi aprovado!'},rejected:{bg:'#FEF2F2',color:'#DC2626',icon:'❌',text:'Rejeitado.'},pending:{bg:'#FFFBEB',color:'#D97706',icon:'⚠️',text:'Correção solicitada.'}}[status]||{bg:'#F8FAFC',color:'#64748B',icon:'ℹ️',text:'Resposta registrada.'};
-  resultDiv.style.cssText=`display:block;text-align:center;padding:20px;margin-top:16px;border-radius:10px;background:${cfg.bg};`;
+  const cfg={approved:{bg:'#F0FDF4',color:'#16A34A',icon:'✅',text:'Aprovado! Obrigado pelo feedback.'},rejected:{bg:'#FEF2F2',color:'#DC2626',icon:'❌',text:'Rejeitado. O time foi notificado.'},pending:{bg:'#FFFBEB',color:'#D97706',icon:'⚠️',text:'Correção solicitada. O time foi notificado.'}}[status]||{bg:'#F8FAFC',color:'#64748B',icon:'ℹ️',text:'Resposta registrada.'};
+  resultDiv.style.cssText=`display:block;text-align:center;padding:20px;margin-top:16px;border-radius:10px;background:${cfg.bg};border:1px solid ${cfg.color}30;`;
   resultDiv.innerHTML=`<div style="font-size:36px;margin-bottom:8px;">${cfg.icon}</div><div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.text}</div>`;
 }
 
@@ -860,52 +757,25 @@ async function approvalAction(action){
   const id=window._approvalId;if(!id){toast('Erro: ID não encontrado','error');return;}
   const ns={approve:'approved',reject:'rejected',correct:'pending'}[action];
   const comment=v('ap-comment')||'';
-
-  // Lê workflow selecionado
   const wfSel=el('ap-workflow-select');
   const workflowId=wfSel?wfSel.value:'';
   const targetCol=workflowId?APP.kanbanCols.find(c=>c.id===workflowId):null;
   const finalStatus=targetCol?(targetCol.status||targetCol.id):ns;
 
-  const updateData={
-    status:finalStatus,
-    clientComment:comment,
-    reviewedAt:new Date().toISOString(),
-    reviewAction:action,
-    clientWorkflow:workflowId
-  };
+  const updateData={status:finalStatus,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action,clientWorkflow:workflowId};
 
-  // Salva localmente primeiro (imediato)
+  // FIX III: save locally AND Firebase, triggers real-time listener in app
   LOCAL.update('posts',id,updateData);
-
-  // Salva no Firebase
   try{
     await DB.update('posts',id,updateData);
-    toast({
-      approve:'✅ Aprovado e salvo! O time foi notificado.',
-      reject:'❌ Rejeitado e salvo. O time foi notificado.',
-      correct:'⚠️ Correção solicitada e salva.'
-    }[action]||'Registrado!', action==='approve'?'success':action==='reject'?'error':'warning');
-  }catch(err){
-    toast('⚠️ Salvo localmente. Verifique conexão.','warning');
-  }
+    toast({approve:'✅ Aprovado! O time foi notificado.',reject:'❌ Rejeitado. O time foi notificado.',correct:'⚠️ Correção solicitada.'}[action]||'Registrado!',action==='approve'?'success':action==='reject'?'error':'warning');
+  }catch(err){toast('⚠️ Salvo localmente. Verifique conexão.','warning');}
 
-  // Atualiza UI
   const stEl=el('ap-status');
-  if(stEl){
-    stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');
-    stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';
-  }
+  if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';}
   showApprovalResult(finalStatus);
-
-  // Mostra histórico
   const prevDiv=el('ap-prev-action');
-  if(prevDiv){
-    const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
-    prevDiv.style.display='block';
-    prevDiv.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--text3);">Última ação: <strong>${msgs[action]}</strong> em ${new Date().toLocaleString('pt-BR')}</div>`;
-  }
-
+  if(prevDiv){const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};prevDiv.style.display='block';prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong>${msgs[action]}</strong> em ${new Date().toLocaleString('pt-BR')}</div>`;}
   document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
 }
 
@@ -916,19 +786,12 @@ async function saveApprovalComment(){
   const wfSel=el('ap-workflow-select');
   const workflowId=wfSel?wfSel.value:'';
   const updateData={clientComment:comment,commentSavedAt:new Date().toISOString()};
-  if(workflowId){
-    const col=APP.kanbanCols.find(c=>c.id===workflowId);
-    if(col){updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}
-  }
-  // Salva local + Firebase
+  if(workflowId){const col=APP.kanbanCols.find(c=>c.id===workflowId);if(col){updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}}
   LOCAL.update('posts',id,updateData);
   try{
     await DB.update('posts',id,updateData);
-    toast('💬 Comentário salvo com sucesso!','success');
-  }catch(err){
-    toast('⚠️ Salvo localmente. Verifique conexão.','warning');
-  }
-  // Feedback visual no botão
+    toast('💬 Comentário salvo!','success');
+  }catch(err){toast('⚠️ Salvo localmente.','warning');}
   const btn=event?.target;
   if(btn){const orig=btn.textContent;btn.textContent='✅ Salvo!';btn.style.background='var(--green)';btn.style.color='#fff';setTimeout(()=>{btn.textContent=orig;btn.style.background='';btn.style.color='';},2000);}
 }
