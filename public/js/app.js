@@ -711,7 +711,7 @@ function openNewAgendamento(){
   const prev=el('ag-file-preview');
   if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
   sv('ag-file-data','');
-  resetTipoBtns();_carouselSlides=[];toggleCarouselSection('image');
+  resetTipoBtns();_carouselSlides=[];toggleCarouselSection('image');renderCarouselSlots();
   setText('modalAgendTitulo','📅 Novo Agendamento');openModal('modalAgendamento');
 }
 function openPostEditor(id){
@@ -731,8 +731,15 @@ function openPostEditor(id){
 }
 function toggleCarouselSection(tipo){
   const cs=el('carousel-section'),fs=el('file-section');
-  if(tipo==='carousel'){if(cs)cs.style.display='block';if(fs)fs.style.display='none';}
-  else{if(cs)cs.style.display='none';if(fs)fs.style.display='block';}
+  if(tipo==='carousel'){
+    if(cs)cs.style.display='block';
+    if(fs)fs.style.display='none';
+    // Render slots every time carousel is shown
+    renderCarouselSlots();
+  } else {
+    if(cs)cs.style.display='none';
+    if(fs)fs.style.display='block';
+  }
 }
 function resetTipoBtns(){
   document.querySelectorAll('.tipo-btn').forEach((b,i)=>{b.classList.remove('active');b.style.cssText='';if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
