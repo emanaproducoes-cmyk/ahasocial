@@ -69,13 +69,14 @@ function doLogout(){
   localStorage.removeItem('aha_user');
   localStorage.removeItem('aha_page');
   APP.user=null;
-  el('loginPage').style.display='flex';el('app').style.display='none';
+  const _lp=el('loginPage');if(_lp){_lp.classList.add('visible');_lp.style.display='flex';}
+  const _ap=el('app');if(_ap){_ap.classList.remove('visible');_ap.style.display='none';}
   try{AUTH.logout();}catch{}
 }
 
 function showApp(){
-  el('loginPage').style.display='none';
-  const appEl=el('app');if(appEl)appEl.style.cssText='display:block;visibility:visible;opacity:1;';
+  const _lp2=el('loginPage');if(_lp2){_lp2.classList.remove('visible');_lp2.style.display='none';}
+  const appEl=el('app');if(appEl){appEl.classList.add('visible');appEl.style.display='block';}
   const u=APP.user;
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
@@ -360,10 +361,13 @@ function kanbanCard(p,col){
     ondragend="kanbanDragEnd(event)"
     ondragover="event.preventDefault()"
     onclick="openPostDetail('${p.id}')">
-    ${url
-      ?`<div class="kanban-card-thumb">${isVideo(p)?`<div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>`}</div>`
-      :`<div style="height:60px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">${p.thumb||'📷'}</div>`
-    }
+    ${(()=>{
+      const thumbUrl=p.type==='carousel'&&p.slides?.length?p.slides[0].fileUrl:url;
+      const isVid=p.type==='carousel'&&p.slides?.length?(p.slides[0].fileType==='video'):isVideo(p);
+      if(thumbUrl&&!isVid) return`<div class="kanban-card-thumb"><img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" loading="lazy"/>${p.type==='carousel'?`<span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.65);color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:6px;">🎠 ${p.slides.length}</span>`:''}</div>`;
+      if(thumbUrl&&isVid) return`<div class="kanban-card-thumb"><div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div></div>`;
+      return`<div style="height:70px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:8px;">${p.type==='carousel'?'🎠':(p.thumb||'📷')}</div>`;
+    })()}
     <div class="kanban-card-title">${esc(p.title)}</div>
     <div class="kanban-card-meta">
       <span class="si ${PSI[p.platform]||''}" style="width:16px;height:16px;font-size:7px;">${PSH[p.platform]||'?'}</span>
@@ -399,8 +403,8 @@ function kanbanDrop(e,targetColId){
   if(!targetCol)return;
   const post=LOCAL.find('posts',postId);
   const newStatus=targetCol.status||targetColId;
-  LOCAL.update('posts',postId,{status:newStatus});
-  DB.update('posts',postId,{status:newStatus});
+  LOCAL.update('posts',postId,{status:newStatus});// instant local
+  DB.update('posts',postId,{status:newStatus}).catch(()=>{});// async
   updateBadges();
   // Som de click
   try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=800;g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);o.start();o.stop(ctx.currentTime+0.12);}catch{}
@@ -551,11 +555,13 @@ function renderCalendar(cid,posts,yr,mo){
           const pUrl=getFileUrl(p);
           const statusColor=p.status==='approved'?'#16A34A':p.status==='rejected'?'#DC2626':p.status==='pending'?'#D97706':p.status==='review'?'#7C3AED':'#64748B';
           return`<div onclick="event.stopPropagation();openPostDetail('${p.id}')" style="cursor:pointer;border-radius:6px;overflow:hidden;border-left:3px solid ${statusColor};background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:transform .1s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" title="${esc(p.title)}">
-            ${pUrl&&!isVideo(p)
-              ?`<img src="${pUrl}" style="width:100%;height:56px;object-fit:cover;object-position:center top;display:block;border-radius:4px 4px 0 0;" loading="lazy" onerror="this.style.display='none'"/>`
-              :isVideo(p)
-                ?`<div style="height:56px;background:#111;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`
-                :`<div style="height:40px;background:${statusColor}18;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">${p.thumb||'📷'}</div>`
+            ${(()=>{
+              const calThumbUrl=p.type==='carousel'&&p.slides?.length?p.slides[0].fileUrl:pUrl;
+              const calIsVid=p.type==='carousel'&&p.slides?.length?(p.slides[0].fileType==='video'):isVideo(p);
+              if(calThumbUrl&&!calIsVid) return`<img src="${calThumbUrl}" style="width:100%;height:56px;object-fit:cover;object-position:center top;display:block;border-radius:4px 4px 0 0;" loading="lazy" onerror="this.style.display='none'"/>`;
+              if(calIsVid) return`<div style="height:56px;background:#111;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`;
+              return`<div style="height:40px;background:${statusColor}18;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">${p.type==='carousel'?'🎠':(p.thumb||'📷')}</div>`;
+            })()}
             }
             <div style="padding:3px 6px 4px;background:#fff;">
               <div style="display:flex;align-items:center;gap:3px;">
@@ -822,15 +828,18 @@ async function saveAgendamento(){
   closeModal('modalAgendamento');
   try{
     if(editingId){
-      // Update — always safe, no duplication risk
+      // UPDATE: LOCAL first for instant feedback, then Firebase
       LOCAL.update('posts',editingId,data);
-      await DB.update('posts',editingId,data);
+      try{await DB.update('posts',editingId,data);}catch(e){toast('⚠️ Salvo localmente, sem conexão.','warning');}
       toast('Post atualizado! ✅','success');
       APP.editingId=null;
     } else {
-      // Create — call DB.add only (handles LOCAL internally when Firebase offline)
-      // Do NOT call LOCAL.add separately to avoid duplication
-      await DB.add('posts',data);
+      // CREATE: DB.add handles both Firebase + LOCAL fallback
+      try{
+        await DB.add('posts',data);
+      }catch(e){
+        LOCAL.add('posts',data);// last resort local
+      }
       toast('Agendamento criado! 🗓️','success');
     }
   }catch(err){
@@ -846,11 +855,15 @@ async function saveAgendamento(){
 async function saveDraft(){if(APP._saving)return;const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
-  LOCAL.remove('posts',id);DB.remove('posts',id);updateBadges();toast('Post excluído.','info');
+  LOCAL.remove('posts',id);// instant
+  DB.remove('posts',id).catch(()=>{});// async
+  updateBadges();toast('Post excluído.','info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
 }
 function doChangeStatus(id,ns){
-  LOCAL.update('posts',id,{status:ns});DB.update('posts',id,{status:ns});updateBadges();closeModal('modalPostDetail');
+  LOCAL.update('posts',id,{status:ns});// instant
+  DB.update('posts',id,{status:ns}).catch(()=>{});// async Firebase
+  updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
   updateCampaignCounts();
@@ -863,10 +876,26 @@ function updateCampaignCounts(){
 // ── Share ─────────────────────────────────────────────────────
 function openShareModal(id){
   const p=LOCAL.find('posts',id);if(!p)return;
-  const link=window.location.origin+window.location.pathname.replace('index.html','')+'?approval='+id;
+  const base=window.location.origin+window.location.pathname.replace(/\/[^/]*$/, '/').replace('index.html','');
+  const link=base+'?approval='+id;
   sv('share-link-input',link);
-  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Link para aprovação:\n\n*'+p.title+'*\n\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
-  el('share-email').href=`mailto:?subject=Aprovação — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Acesse:\n\n'+link)}`;
+  // Thumbnail preview in modal
+  const thumbDiv=el('share-thumb-preview');
+  if(thumbDiv){
+    const thumbUrl=p.type==='carousel'&&p.slides?.length?p.slides[0].fileUrl:getFileUrl(p);
+    const isVid=p.type==='carousel'&&p.slides?.length?(p.slides[0].fileType==='video'):isVideo(p);
+    if(thumbUrl&&!isVid){
+      thumbDiv.innerHTML=`<img src="${thumbUrl}" style="width:100%;height:140px;object-fit:cover;border-radius:var(--radius-sm);display:block;" loading="lazy"/>`;
+    } else if(isVid){
+      thumbDiv.innerHTML=`<div style="height:140px;background:#111;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div>`;
+    } else {
+      thumbDiv.innerHTML=`<div style="height:100px;background:var(--surface2);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:40px;">${p.thumb||'📷'}</div>`;
+    }
+    // Title & status overlay
+    thumbDiv.innerHTML+=`<div style="margin-top:8px;"><div style="font-size:13px;font-weight:800;color:var(--text);">${esc(p.title)}</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:10px;">${SL[p.status]||p.status}</span><span class="si ${PSI[p.platform]||''}" style="width:16px;height:16px;font-size:7px;">${PSH[p.platform]||'?'}</span><span style="font-size:11px;color:var(--text3);">${p.date||''}</span></div></div>`;
+  }
+  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Segue o criativo para sua aprovação:\n\n*'+p.title+'*\n\nAcesse o link abaixo para visualizar e aprovar:\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
+  el('share-email').href=`mailto:?subject=Criativo para Aprovação — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Olá!\n\nSegue o link para aprovação do criativo "'+p.title+'":\n\n'+link+'\n\nPor favor, acesse e deixe seu feedback.\n\nAguardo seu retorno!')}`;
   openModal('modalShare');
 }
 function copyLink(){const val=v('share-link-input');if(!val)return;navigator.clipboard?.writeText(val).then(()=>toast('Link copiado! 📋','success'));}
@@ -891,48 +920,57 @@ function setupApprovalPage(){
 }
 
 async function loadApprovalPost(id){
-  // Show loading state immediately
   const appEl=el('approvalPage');
+  // Spinner while loading
   if(appEl){
     const card=appEl.querySelector('.approval-card');
-    if(card)card.innerHTML=`<div style="padding:60px;text-align:center;"><div style="width:40px;height:40px;border:4px solid #FED7AA;border-top-color:#F97316;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px;"></div><div style="font-size:14px;color:#64748B;font-weight:600;">Carregando criativo...</div></div>`;
+    if(card)card.innerHTML=`<div style="padding:80px 40px;text-align:center;"><div style="width:44px;height:44px;border:4px solid #FED7AA;border-top-color:#F97316;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px;"></div><div style="font-size:15px;color:#64748B;font-weight:700;margin-bottom:6px;">Carregando criativo...</div><div style="font-size:12px;color:#94A3B8;">Aguarde um momento</div></div>`;
   }
 
-  // Wait for Firebase SDK to be available (max 8s)
-  const waitForFirebase=()=>new Promise(resolve=>{
+  // 1. Wait for Firebase SDK scripts to load (up to 10s)
+  await new Promise(resolve=>{
     if(typeof firebase!=='undefined'){resolve();return;}
-    let tries=0;
-    const t=setInterval(()=>{
-      tries++;
-      if(typeof firebase!=='undefined'||tries>40){clearInterval(t);resolve();}
-    },200);
+    let n=0; const t=setInterval(()=>{n++;if(typeof firebase!=='undefined'||n>50){clearInterval(t);resolve();}},200);
   });
-  await waitForFirebase();
 
-  // Init Firebase
+  // 2. Initialize Firebase
   initFirebase();
 
-  // Wait for Firebase to be ready (max 5s)
+  // 3. Sign in anonymously so Firestore rules can allow read
+  if(_firebaseReady&&_auth){
+    try{
+      if(!_auth.currentUser){
+        await _auth.signInAnonymously().catch(()=>{});
+      }
+    }catch(e){}
+  }
+
+  // 4. Wait for Firebase to be ready (up to 6s)
   if(!_firebaseReady){
     await new Promise(resolve=>{
-      let tries=0;
-      const t=setInterval(()=>{
-        tries++;
-        if(_firebaseReady||tries>25){clearInterval(t);resolve();}
-      },200);
+      let n=0; const t=setInterval(()=>{n++;if(_firebaseReady||n>30){clearInterval(t);resolve();}},200);
     });
   }
 
-  // Try to fetch post — Firebase first (client device has no localStorage)
+  // 5. Fetch post — try Firebase first (works on ANY device, not just creator's)
   let p=null;
   if(_firebaseReady){
-    try{p=await FS.get('posts',id);}catch(e){console.warn('FS.get failed:',e);}
+    // Try up to 3 times (network can be slow on mobile)
+    for(let attempt=0;attempt<3&&!p;attempt++){
+      try{
+        p=await FS.get('posts',id);
+        if(p) break;
+      }catch(e){
+        console.warn('FS.get attempt',attempt+1,'failed:',e.message);
+        if(attempt<2) await new Promise(r=>setTimeout(r,1000));
+      }
+    }
   }
-  // Fallback to localStorage (same device as creator)
-  if(!p)p=LOCAL.find('posts',id);
+  // Fallback: localStorage (only works if creator is on same device)
+  if(!p) p=LOCAL.find('posts',id);
 
   if(!p){
-    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou foi removido.</p><p style="color:#94A3B8;font-size:12px;margin-top:8px;">Verifique se o link está correto ou peça um novo link ao criativo.</p></div></div>`;
+    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;line-height:1.7;">Este link pode ter expirado ou o post foi removido.<br/>Se o problema persistir, peça um novo link.</p></div></div>`;
     return;
   }
   window._approvalId=id;window._approvalPost=p;
