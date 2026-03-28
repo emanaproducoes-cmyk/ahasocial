@@ -30,6 +30,15 @@ function initFirebase() {
   } catch(e) { console.error('Firebase erro:', e.message); return false; }
 }
 
+const LOCAL = {
+  get(k)        { try{return JSON.parse(localStorage.getItem('aha_'+k))||[];}catch{return[];} },
+  set(k,d)      { try{localStorage.setItem('aha_'+k,JSON.stringify(d));}catch(e){console.warn('Storage:',e);} },
+  add(k,item)   { const a=this.get(k); const n={...item,id:'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),createdAt:new Date().toISOString()}; a.unshift(n); this.set(k,a); return n; },
+  update(k,id,d){ const a=this.get(k); const i=a.findIndex(x=>x.id===id); if(i!==-1){a[i]={...a[i],...d,updatedAt:new Date().toISOString()};this.set(k,a);return a[i];}return null; },
+  remove(k,id)  { const a=this.get(k).filter(x=>x.id!==id); this.set(k,a); },
+  find(k,id)    { return this.get(k).find(x=>x.id===id)||null; },
+};
+
 const FS = {
   async get(col, id) {
     if (!_db) return null;
