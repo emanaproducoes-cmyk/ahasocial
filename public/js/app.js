@@ -157,8 +157,16 @@ function updateBadges(){
 }
 
 // ── Thumbnails ────────────────────────────────────────────────
-function getFileUrl(p){if(!p)return null;if(p.fileUrl&&p.fileUrl.length>5)return p.fileUrl;return null;}
-function isVideo(p){return p.fileType==='video'||(p.fileUrl&&p.fileUrl.startsWith('data:video'));}
+function getFileUrl(p){
+  if(!p||!p.fileUrl)return null;
+  // Handle old JSON format: {thumb, type:'video', isVideo:true}
+  if(p.fileUrl.startsWith('{')){
+    try{const d=JSON.parse(p.fileUrl);return d.thumb||d.url||null;}catch{}
+  }
+  if(p.fileUrl.length>5)return p.fileUrl;
+  return null;
+}
+function isVideo(p){return p.fileType==='video'||(p.fileUrl&&(p.fileUrl.startsWith('data:video')||p.fileUrl.startsWith('data:application/octet')));}
 function thumbBg(p){
   const url=getFileUrl(p);
   if(url){if(isVideo(p))return`<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div>`;return`<div style="position:absolute;inset:0;background-image:url('${encodeURI(url)}');background-size:cover;background-position:center;"></div>`;}
@@ -553,11 +561,36 @@ async function processFile(file,previewId,dataId){
   const isImg=file.type.startsWith('image/'),isVid=file.type.startsWith('video/');
   if(!isImg&&!isVid){toast('Use PNG, JPG ou MP4.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
-  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:10px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando...</div></div>`;
+  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:10px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando... ${isVid?'(vídeo pode demorar)':''}</div></div>`;
   try{
-    if(isImg){const compressed=await compressImage(file);if(dataEl)dataEl.value=compressed;if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;toast(`✅ ${file.name} carregado!`,'success');}
-    else{const thumb=await videoThumbnail(file);if(dataEl)dataEl.value=JSON.stringify({thumb,type:'video',name:file.name,isVideo:true});if(prev)prev.innerHTML=`<div style="position:relative;height:120px;background:#000;border-radius:var(--radius);overflow:hidden;"><img src="${thumb}" style="width:100%;height:100%;object-fit:cover;opacity:.7;"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div></div>`;toast(`✅ Vídeo carregado!`,'success');}
-  }catch(e){toast('Erro: '+e.message,'error');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div>`;}
+    if(isImg){
+      const compressed=await compressImage(file);
+      if(dataEl)dataEl.value=compressed;
+      if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+      toast(`✅ ${file.name} carregado!`,'success');
+    } else {
+      // FIX III: Read video as base64 so it can be played back
+      const videoB64=await fileToBase64(file);
+      const videoSrc='data:'+file.type+';base64,'+videoB64;
+      if(dataEl)dataEl.value=videoSrc;
+      // Preview: actual playable video tag
+      if(prev)prev.innerHTML=`<video src="${videoSrc}" controls style="width:100%;height:160px;border-radius:var(--radius);background:#000;display:block;" preload="metadata"></video>`;
+      toast(`✅ Vídeo "${file.name}" carregado!`,'success');
+    }
+  }catch(e){
+    toast('Erro: '+e.message,'error');
+    if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div>`;
+  }
+}
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    if(file.size>50*1024*1024){reject(new Error('Vídeo muito grande. Use max 50MB.'));return;}
+    const reader=new FileReader();
+    reader.onload=e=>resolve(e.target.result.split(',')[1]);
+    reader.onerror=()=>reject(new Error('Erro ao ler vídeo.'));
+    reader.readAsDataURL(file);
+  });
 }
 function compressImage(file){
   return new Promise((resolve,reject)=>{
@@ -581,26 +614,94 @@ let _carouselSlides=[];
 function initCarouselSlides(existing){_carouselSlides=existing||[];renderCarouselSlots();}
 function renderCarouselSlots(){
   const cont=el('carousel-slots');if(!cont)return;
-  const maxSlides=6;let html='';
-  for(let i=0;i<maxSlides;i++){
+  const maxSlides=6;
+  let html=`
+  <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <label style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:var(--primary);color:#fff;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;transition:all .15s;" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+      📂 Adicionar Imagens/Vídeos
+      <input type="file" accept="image/*,video/*" multiple style="display:none;" onchange="addCarouselMultiple(event)"/>
+    </label>
+    <span style="font-size:11px;color:var(--text3);" id="carousel-count-label">${_carouselSlides.length}/${maxSlides} slides</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">`;
+
+  // Show existing slides
+  for(let i=0;i<_carouselSlides.length;i++){
     const s=_carouselSlides[i];
-    if(s){html+=`<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--primary);"><div style="height:80px;background:var(--surface2);">${s.fileUrl?(s.fileType==='video'?`<div style="height:80px;background:#000;display:flex;align-items:center;justify-content:center;font-size:20px;">▶️</div>`:`<img src="${s.fileUrl}" style="width:100%;height:80px;object-fit:cover;"/>`):`<div style="height:80px;display:flex;align-items:center;justify-content:center;font-size:24px;">${s.thumb||'🖼️'}</div>`}</div><div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:3px;background:var(--primary-light);">Slide ${i+1}</div><button onclick="removeCarouselSlide(${i})" style="position:absolute;top:3px;right:3px;background:rgba(220,38,38,.85);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;">✕</button></div>`;}
-    else{html+=`<label style="height:108px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--text3);gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''"><span style="font-size:22px;">➕</span><span style="font-weight:600;">Slide ${i+1}</span><input type="file" accept="image/*,video/*" style="display:none;" onchange="addCarouselSlide(event,${i})"/></label>`;}
+    const isVid=s.fileType==='video'||(s.fileUrl&&s.fileUrl.startsWith('data:video'));
+    html+=`<div style="position:relative;border-radius:8px;overflow:hidden;border:2px solid var(--primary);box-shadow:0 2px 8px rgba(0,0,0,.08);">
+      <div style="position:relative;height:90px;background:var(--surface2);">
+        ${isVid
+          ?`<video src="${s.fileUrl}" style="width:100%;height:90px;object-fit:cover;" muted></video><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="font-size:20px;background:rgba(0,0,0,.5);border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;">▶️</span></div>`
+          :`<img src="${s.fileUrl}" style="width:100%;height:90px;object-fit:cover;display:block;" loading="lazy"/>`
+        }
+        <button onclick="removeCarouselSlide(${i})" style="position:absolute;top:4px;right:4px;background:rgba(220,38,38,.9);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">✕</button>
+        <button onclick="moveCarouselSlide(${i},-1)" style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:4px;width:20px;height:18px;font-size:11px;cursor:pointer;${i===0?'opacity:.3;pointer-events:none;':''}">‹</button>
+        <button onclick="moveCarouselSlide(${i},1)" style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:4px;width:20px;height:18px;font-size:11px;cursor:pointer;${i===_carouselSlides.length-1?'opacity:.3;pointer-events:none;':''}">›</button>
+      </div>
+      <div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:3px 4px;background:var(--primary-light);">
+        ${isVid?'🎬':'🖼️'} Slide ${i+1}
+      </div>
+    </div>`;
   }
+
+  // Show empty slots
+  for(let i=_carouselSlides.length;i<maxSlides;i++){
+    html+=`<label style="height:110px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''">
+      <span style="font-size:20px;">➕</span>
+      <span style="font-size:10px;font-weight:600;color:var(--text3);">Slide ${i+1}</span>
+      <input type="file" accept="image/*,video/*" style="display:none;" onchange="addCarouselSlide(event,${i})"/>
+    </label>`;
+  }
+  html+='</div>';
   cont.innerHTML=html;
   const counter=el('carousel-count');if(counter)counter.textContent=`${_carouselSlides.length}/${maxSlides} slides`;
 }
+
+async function addCarouselMultiple(e){
+  const files=Array.from(e.target.files||[]);
+  if(!files.length)return;
+  const maxSlides=6;
+  const available=maxSlides-_carouselSlides.length;
+  const toProcess=files.slice(0,available);
+  if(files.length>available)toast(`⚠️ Máx. ${maxSlides} slides — ${files.length-available} ignorados`,'warning');
+  toast('⏳ Processando '+toProcess.length+' arquivo(s)...','info');
+  for(const file of toProcess){
+    try{
+      let fileUrl,fileType;
+      if(file.type.startsWith('image/')){fileUrl=await compressImage(file);fileType='image';}
+      else{fileUrl=await fileToBase64(file).then(b=>'data:'+file.type+';base64,'+b);fileType='video';}
+      _carouselSlides.push({fileUrl,fileType,thumb:'🖼️',caption:''});
+    }catch(err){toast('Erro em '+file.name+': '+err.message,'error');}
+  }
+  renderCarouselSlots();
+  toast(`✅ ${toProcess.length} slide(s) adicionados!`,'success');
+  e.target.value='';
+}
+
 async function addCarouselSlide(e,idx){
   const file=e.target.files[0];if(!file)return;
   try{
     let fileUrl,fileType;
     if(file.type.startsWith('image/')){fileUrl=await compressImage(file);fileType='image';}
-    else{const t=await videoThumbnail(file);fileUrl=t;fileType='video';}
-    _carouselSlides[idx]={fileUrl,fileType,thumb:'🖼️',caption:''};
+    else{fileUrl=await fileToBase64(file).then(b=>'data:'+file.type+';base64,'+b);fileType='video';}
+    if(idx<_carouselSlides.length){_carouselSlides[idx]={fileUrl,fileType,thumb:'🖼️',caption:''};}
+    else{_carouselSlides.push({fileUrl,fileType,thumb:'🖼️',caption:''});}
     renderCarouselSlots();toast(`✅ Slide ${idx+1} adicionado!`,'success');
   }catch(err){toast('Erro: '+err.message,'error');}
+  e.target.value='';
 }
+
 function removeCarouselSlide(idx){_carouselSlides.splice(idx,1);renderCarouselSlots();}
+
+function moveCarouselSlide(idx,dir){
+  const newIdx=idx+dir;
+  if(newIdx<0||newIdx>=_carouselSlides.length)return;
+  const tmp=_carouselSlides[idx];
+  _carouselSlides[idx]=_carouselSlides[newIdx];
+  _carouselSlides[newIdx]=tmp;
+  renderCarouselSlots();
+}
 
 // ── Modal Agendamento ─────────────────────────────────────────
 function openNewAgendamento(){
@@ -642,20 +743,59 @@ function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.cl
 async function saveAgendamento(){
   const title=v('ag-title')?.trim(),platform=v('ag-platform');
   if(!title){toast('Informe o título. ⚠️','warning');return;}
+  // Guard: prevent double-save
+  if(APP._saving){return;} APP._saving=true;
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
   const fileRaw=v('ag-file-data');
   let fileUrl=null,fileType='image';
-  if(fileRaw){if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}}
-  if(APP.editingId&&!fileRaw&&tipo!=='carousel'){const orig=LOCAL.find('posts',APP.editingId);if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}}
-  const data={title,platform,date:v('ag-date')||'',campaign:v('ag-campaign')?.trim()||'',caption:v('ag-caption')?.trim()||'',tags:v('ag-tags')?.trim()||'',status:v('ag-status')||'pending',type:tipo,fileUrl,fileType,thumb:fileUrl?null:(TEMO[tipo]||'📸'),slides:tipo==='carousel'?[..._carouselSlides]:undefined};
+  if(fileRaw){
+    if(fileRaw.startsWith('{')){
+      try{const fd=JSON.parse(fileRaw);fileUrl=fd.url||fd.thumb||null;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}
+    }else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){
+      fileUrl=fileRaw;
+      fileType=fileRaw.startsWith('data:video')?'video':'image';
+    }
+  }
+  if(APP.editingId&&!fileRaw&&tipo!=='carousel'){
+    const orig=LOCAL.find('posts',APP.editingId);
+    if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}
+  }
+  const data={
+    title,platform,
+    date:v('ag-date')||'',
+    campaign:v('ag-campaign')?.trim()||'',
+    caption:v('ag-caption')?.trim()||'',
+    tags:v('ag-tags')?.trim()||'',
+    status:v('ag-status')||'pending',
+    type:tipo,fileUrl,fileType,
+    thumb:fileUrl?null:(TEMO[tipo]||'📸'),
+    slides:tipo==='carousel'?[..._carouselSlides]:undefined,
+  };
   closeModal('modalAgendamento');
-  if(APP.editingId){LOCAL.update('posts',APP.editingId,data);DB.update('posts',APP.editingId,data);toast('Post atualizado! ✅','success');APP.editingId=null;}
-  else{LOCAL.add('posts',data);DB.add('posts',data);toast('Agendamento criado! 🗓️','success');}
+  try{
+    if(APP.editingId){
+      // Update — always safe, no duplication risk
+      LOCAL.update('posts',APP.editingId,data);
+      await DB.update('posts',APP.editingId,data);
+      toast('Post atualizado! ✅','success');
+      APP.editingId=null;
+    } else {
+      // Create — call DB.add only (handles LOCAL internally when Firebase offline)
+      // Do NOT call LOCAL.add separately to avoid duplication
+      await DB.add('posts',data);
+      toast('Agendamento criado! 🗓️','success');
+    }
+  }catch(err){
+    toast('Erro ao salvar: '+err.message,'error');
+  } finally {
+    APP._saving=false;
+  }
   updateBadges();
-  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
+  if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);
+  else renderPage(APP.currentPage);
   updateCampaignCounts();
 }
-async function saveDraft(){const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
+async function saveDraft(){if(APP._saving)return;const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
   LOCAL.remove('posts',id);DB.remove('posts',id);updateBadges();toast('Post excluído.','info');
