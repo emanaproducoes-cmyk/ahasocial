@@ -172,6 +172,18 @@ function thumbBg(p){
   if(url){if(isVideo(p))return`<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div>`;return`<div style="position:absolute;inset:0;background-image:url('${encodeURI(url)}');background-size:cover;background-position:center;"></div>`;}
   return`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">${p.thumb||'📷'}</div>`;
 }
+// Carousel thumb: show first slide with overlay
+function carouselThumbBg(p){
+  if(!p.slides||!p.slides.length)return thumbBg(p);
+  const first=p.slides[0];
+  if(first.fileUrl){
+    if(first.fileType==='video')
+      return`<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:28px;">▶️</div>`;
+    return`<div style="position:absolute;inset:0;background-image:url('${encodeURI(first.fileUrl)}');background-size:cover;background-position:center;"></div>`;
+  }
+  return`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">🎠</div>`;
+}
+
 function thumbInline(p,size=36){
   const url=getFileUrl(p);
   if(url&&!isVideo(p))return`<img src="${url}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;vertical-align:middle;flex-shrink:0;" loading="lazy" onerror="this.style.display='none'"/>`;
@@ -214,10 +226,11 @@ function postCard(p){
   // FIX II: show client comment badge on card
   const hasComment=p.clientComment&&p.clientComment.trim().length>0;
   return`<div class="post-card" onclick="openPostDetail('${p.id}')">
-    <div class="post-card-thumb" style="position:relative;overflow:hidden;">${thumbBg(p)}
+    <div class="post-card-thumb" style="position:relative;overflow:hidden;">${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
       <div style="position:absolute;top:8px;left:8px;z-index:1;"><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></div>
       <div style="position:absolute;top:8px;right:8px;z-index:1;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span></div>
-      ${hasComment?`<div style="position:absolute;bottom:6px;left:6px;z-index:1;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬 Comentário</div>`:''}
+      ${p.type==='carousel'&&p.slides?.length?`<div style="position:absolute;bottom:6px;right:6px;z-index:1;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;backdrop-filter:blur(4px);">🎠 ${p.slides.length} slides</div>`:''}
+      ${hasComment?`<div style="position:absolute;bottom:6px;left:6px;z-index:1;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬</div>`:''}
     </div>
     <div class="post-card-body"><div class="post-card-title">${esc(p.title)}</div><div class="post-card-meta">${p.date||'Sem data'} · ${PL[p.platform]||p.platform}</div>${p.campaign?`<div class="post-card-meta" style="margin-top:2px;">📋 ${esc(p.campaign)}</div>`:''}</div>
     <div class="post-card-footer">
@@ -233,16 +246,24 @@ function openPostDetail(id){
   const thumbEl=el('detail-thumb');
   if(thumbEl){
     if(p.type==='carousel'&&p.slides?.length){
-      thumbEl.innerHTML=`<div style="position:relative;">
-        <div id="carousel-preview" style="overflow:hidden;border-radius:var(--radius);background:var(--surface2);">
-          ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:220px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:220px;object-fit:contain;display:block;"/>`):`<div style="height:180px;display:flex;align-items:center;justify-content:center;font-size:48px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
-        </div>
-        <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;">
-          ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:8px;height:8px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;" id="dot-${i}"></div>`).join('')}
-        </div>
-        <div style="text-align:center;margin-top:6px;font-size:11px;color:var(--text3);">🎠 Carrossel • <span id="carousel-current">1</span>/${p.slides.length} slides</div>
-      </div>`;
       window._detailSlides=p.slides;
+      window._detailSlideIdx=0;
+      thumbEl.innerHTML=`<div style="position:relative;">
+        <!-- Slides -->
+        <div id="carousel-preview" style="position:relative;overflow:hidden;border-radius:var(--radius);background:var(--surface2);">
+          ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:260px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:260px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
+          <!-- Prev/Next arrows -->
+          <button onclick="detailCarouselNav(-1)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);transition:background .15s;" onmouseover="this.style.background='rgba(0,0,0,.8)'" onmouseout="this.style.background='rgba(0,0,0,.55)'">‹</button>
+          <button onclick="detailCarouselNav(1)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);transition:background .15s;" onmouseover="this.style.background='rgba(0,0,0,.8)'" onmouseout="this.style.background='rgba(0,0,0,.55)'">›</button>
+          <!-- Counter badge -->
+          <div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;backdrop-filter:blur(4px);"><span id="carousel-current">1</span>/${p.slides.length}</div>
+        </div>
+        <!-- Dot indicators -->
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;">
+          ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:${i===0?10:7}px;height:${i===0?10:7}px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;transition:all .2s;" id="dot-${i}"></div>`).join('')}
+        </div>
+        <div style="text-align:center;margin-top:6px;font-size:11px;color:var(--text3);font-weight:600;">🎠 Carrossel — ${p.slides.length} slides</div>
+      </div>`;
     } else { thumbEl.innerHTML=thumbFull(p); }
   }
   setText('detail-title',p.title);setText('detail-platform',PL[p.platform]||p.platform);
@@ -270,9 +291,19 @@ function openPostDetail(id){
 
 function showCarouselSlide(idx){
   const slides=window._detailSlides;if(!slides)return;
+  idx=Math.max(0,Math.min(slides.length-1,idx));
+  window._detailSlideIdx=idx;
   document.querySelectorAll('.carousel-slide-preview').forEach((s,i)=>{s.style.display=i===idx?'block':'none';});
-  document.querySelectorAll('[id^="dot-"]').forEach((d,i)=>{d.style.background=i===idx?'var(--primary)':'var(--border2)';});
+  document.querySelectorAll('[id^="dot-"]').forEach((d,i)=>{
+    d.style.background=i===idx?'var(--primary)':'var(--border2)';
+    d.style.width=i===idx?'10px':'7px';
+    d.style.height=i===idx?'10px':'7px';
+  });
   const curr=el('carousel-current');if(curr)curr.textContent=idx+1;
+}
+function detailCarouselNav(dir){
+  const slides=window._detailSlides;if(!slides)return;
+  showCarouselSlide((window._detailSlideIdx||0)+dir);
 }
 
 // ── KANBAN WORKFLOW — Drag & Drop ─────────────────────────────
@@ -1001,7 +1032,17 @@ function renderTrafego(){
 
 // ── Modals ────────────────────────────────────────────────────
 function openModal(id){const e=el(id);if(e){e.classList.add('open');document.body.style.overflow='hidden';}}
-function closeModal(id){if(id){const e=el(id);if(e)e.classList.remove('open');}else document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));document.body.style.overflow='';APP.editingId=null;}
+function closeModal(id){
+  if(id){
+    const e=el(id);if(e)e.classList.remove('open');
+    // Reset editingId only when closing the agendamento modal (not post detail)
+    if(id==='modalAgendamento')APP.editingId=null;
+  } else {
+    document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
+    APP.editingId=null;
+  }
+  document.body.style.overflow='';
+}
 
 // ── Toast ─────────────────────────────────────────────────────
 let _tq=[],_tr=false;
