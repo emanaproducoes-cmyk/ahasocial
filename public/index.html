@@ -6,10 +6,10 @@
 <title>AHA Social Planning — Gestão de Redes Sociais</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>"/>
 <link rel="stylesheet" href="css/app.css"/>
+<style>.upload-spinner{width:28px;height:28px;border:3px solid var(--border,#E2E8F0);border-top-color:var(--primary,#F97316);border-radius:50%;animation:aha-spin .7s linear infinite;}@keyframes aha-spin{to{transform:rotate(360deg);}}</style>
 </head>
 <body>
 
-<!-- ═══════════════════════ LOGIN PAGE ═══════════════════════ -->
 <div id="loginPage">
   <div class="login-left">
     <img src="assets/banner.png" alt="AHA Social Planning" class="login-banner-img"/>
@@ -20,7 +20,7 @@
         <div class="login-logo-tagline">Social Planning</div>
       </div>
       <div class="login-tagline">Planeje, aprove e publique com <span>inteligência</span></div>
-      <div class="login-desc">A plataforma completa para agências que gerenciam redes sociais com excelência. Do briefing à publicação, tudo em um lugar.</div>
+      <div class="login-desc">A plataforma completa para agências que gerenciam redes sociais com excelência.</div>
       <div class="login-features">
         <div class="login-feature"><div class="login-feature-icon">📅</div>Agendamento inteligente multi-plataforma</div>
         <div class="login-feature"><div class="login-feature-icon">✅</div>Fluxo de aprovação com link direto ao cliente</div>
@@ -47,7 +47,7 @@
         <input type="password" id="loginPass" placeholder="••••••••" value="12345678"/>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:20px;">
-        <a style="font-size:12px;color:var(--primary);font-weight:600;cursor:pointer;" onclick="showToast('Funcionalidade em breve!','info')">Esqueceu a senha?</a>
+        <a style="font-size:12px;color:var(--primary);font-weight:600;cursor:pointer;">Esqueceu a senha?</a>
       </div>
       <button class="btn-login" id="btn-login-email" onclick="doLogin()">Entrar na plataforma →</button>
       <div class="login-or">ou</div>
@@ -60,12 +60,9 @@
   </div>
 </div>
 
-<!-- ═══════════════════════ APP ═══════════════════════ -->
 <div id="app" style="display:none;">
-
-  <!-- SIDEBAR -->
   <nav class="sidebar" id="sidebar">
-    <div class="sidebar-logo">
+    <div class="sidebar-logo" onclick="goHome()" title="Ir para o início">
       <div class="aha-mark">AHA</div>
       <div class="social-mark">Social Planning</div>
       <div class="agency-mark">Gestão de Redes Sociais</div>
@@ -79,7 +76,7 @@
       <div class="nav-item" onclick="showPage('contas',this)">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z"/></svg>
         Contas
-        <span class="nav-badge" id="badge-contas">3</span>
+        <span class="nav-badge" id="badge-contas">0</span>
       </div>
     </div>
     <div class="nav-section">
@@ -95,7 +92,7 @@
       <div class="nav-item" onclick="showPage('analise',this)">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
         Em Análise
-        <span class="nav-badge yellow" id="badge-analise">2</span>
+        <span class="nav-badge yellow" id="badge-analise">0</span>
       </div>
       <div class="nav-item" onclick="showPage('aprovados',this)">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/></svg>
@@ -104,7 +101,7 @@
       <div class="nav-item" onclick="showPage('rejeitados',this)">
         <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"/></svg>
         Rejeitados
-        <span class="nav-badge red" id="badge-rejeitados">1</span>
+        <span class="nav-badge red" id="badge-rejeitados">0</span>
       </div>
     </div>
     <div class="nav-section">
@@ -123,7 +120,7 @@
       <div class="sidebar-user">
         <div class="sidebar-avatar" id="sideAvatar">JS</div>
         <div class="sidebar-user-info">
-          <div class="sidebar-user-name" id="sideUserName">João Silva</div>
+          <div class="sidebar-user-name" id="sideUserName">Usuário</div>
           <div class="sidebar-user-role">Gerente de Conteúdo</div>
         </div>
       </div>
@@ -133,105 +130,43 @@
     </div>
   </nav>
 
-  <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-left">
       <button class="menu-toggle" onclick="toggleMobile()">☰</button>
-      <div>
-        <div class="page-title" id="pageTitle">Dashboard</div>
-      </div>
+      <div><div class="page-title" id="pageTitle">Dashboard</div></div>
     </div>
     <div class="topbar-right">
-      <button class="topbar-btn" onclick="updateBadges();renderPage(APP.currentPage);toast('🔄 Dados sincronizados!','success')">
+      <button class="topbar-btn" onclick="updateBadges();renderPage(APP.currentPage);toast('🔄 Sincronizado!','success')">
         <svg viewBox="0 0 20 20" fill="currentColor" width="13"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"/></svg>
         Sincronizar
       </button>
       <button class="topbar-btn primary" onclick="openNewAgendamento()">+ Novo Post</button>
-      <div class="icon-btn" onclick="showToast('Sem novas notificações','info')">
+      <div class="icon-btn" onclick="toast('Sem novas notificações','info')">
         <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a2 2 0 002-2H8a2 2 0 002 2z"/></svg>
         <div class="notif-dot"></div>
       </div>
-      <div class="top-avatar" id="topAvatar" onclick="showToast('Perfil em breve!','info')">JS</div>
+      <div class="top-avatar" id="topAvatar">JS</div>
     </div>
   </header>
 
-  <!-- MAIN CONTENT -->
   <main class="main-content">
 
-    <!-- ══════════════════ DASHBOARD ══════════════════ -->
+    <!-- DASHBOARD -->
     <div class="page-section active" id="sec-dashboard">
-      <!-- Filter Bar -->
       <div class="filter-bar">
         <span class="filter-label">Filtrar:</span>
-        <select class="filter-select" onchange="renderDashboard()">
-          <option>Últimos 30 dias</option>
-          <option>Últimos 7 dias</option>
-          <option>Este mês</option>
-          <option>Este trimestre</option>
-          <option>Este ano</option>
-        </select>
+        <select class="filter-select" onchange="renderDashboard()"><option>Últimos 30 dias</option><option>Últimos 7 dias</option><option>Este mês</option><option>Este trimestre</option><option>Este ano</option></select>
         <div class="filter-divider"></div>
-        <select class="filter-select">
-          <option>Todas as plataformas</option>
-          <option>Instagram</option>
-          <option>Facebook</option>
-          <option>YouTube</option>
-          <option>TikTok</option>
-        </select>
-        <div class="filter-divider"></div>
-        <select class="filter-select">
-          <option>Todas as campanhas</option>
-          <option>Black Friday 2026</option>
-          <option>Lançamento X</option>
-          <option>Awareness Q1</option>
-        </select>
+        <select class="filter-select"><option>Todas as plataformas</option><option>Instagram</option><option>Facebook</option><option>YouTube</option><option>TikTok</option></select>
       </div>
-
-      <!-- KPIs -->
       <div class="kpi-grid">
-        <div class="kpi-card" style="--kpi-color:#F97316;" onclick="showPage('posts',document.querySelector('[onclick*=posts]'))">
-          <div class="kpi-label">Total de Posts</div>
-          <div class="kpi-value" id="kpi-total">—</div>
-          <div class="kpi-footer">
-            <span class="kpi-change up">↑ 18%</span>
-            <span class="kpi-period">vs mês anterior</span>
-          </div>
-          <div class="kpi-icon" style="background:#FFF7ED;">📝</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:#16A34A;" onclick="showPage('aprovados',document.querySelector('[onclick*=aprovados]'))">
-          <div class="kpi-label">Aprovados</div>
-          <div class="kpi-value" id="kpi-approved">—</div>
-          <div class="kpi-footer">
-            <span class="kpi-change up">↑ 24%</span>
-            <span class="kpi-period">vs mês anterior</span>
-          </div>
-          <div class="kpi-icon" style="background:#F0FDF4;">✅</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:#D97706;" onclick="showPage('analise',document.querySelector('[onclick*=analise]'))">
-          <div class="kpi-label">Em Análise</div>
-          <div class="kpi-value" id="kpi-pending">—</div>
-          <div class="kpi-footer">
-            <span class="kpi-change down">↓ 3%</span>
-            <span class="kpi-period">vs mês anterior</span>
-          </div>
-          <div class="kpi-icon" style="background:#FFFBEB;">⏳</div>
-        </div>
-        <div class="kpi-card" style="--kpi-color:#DC2626;" onclick="showPage('rejeitados',document.querySelector('[onclick*=rejeitados]'))">
-          <div class="kpi-label">Rejeitados</div>
-          <div class="kpi-value" id="kpi-rejected">—</div>
-          <div class="kpi-footer">
-            <span class="kpi-change down">↓ 5%</span>
-            <span class="kpi-period">vs mês anterior</span>
-          </div>
-          <div class="kpi-icon" style="background:#FEF2F2;">❌</div>
-        </div>
+        <div class="kpi-card" style="--kpi-color:#F97316;" onclick="showPage('posts',null)"><div class="kpi-label">Total de Posts</div><div class="kpi-value" id="kpi-total">—</div><div class="kpi-footer"><span class="kpi-change up">↑ 18%</span><span class="kpi-period">vs mês anterior</span></div><div class="kpi-icon" style="background:#FFF7ED;">📝</div></div>
+        <div class="kpi-card" style="--kpi-color:#16A34A;" onclick="showPage('aprovados',null)"><div class="kpi-label">Aprovados</div><div class="kpi-value" id="kpi-approved">—</div><div class="kpi-footer"><span class="kpi-change up">↑ 24%</span><span class="kpi-period">vs mês anterior</span></div><div class="kpi-icon" style="background:#F0FDF4;">✅</div></div>
+        <div class="kpi-card" style="--kpi-color:#D97706;" onclick="showPage('analise',null)"><div class="kpi-label">Em Análise</div><div class="kpi-value" id="kpi-pending">—</div><div class="kpi-footer"><span class="kpi-change down">↓ 3%</span><span class="kpi-period">vs mês anterior</span></div><div class="kpi-icon" style="background:#FFFBEB;">⏳</div></div>
+        <div class="kpi-card" style="--kpi-color:#DC2626;" onclick="showPage('rejeitados',null)"><div class="kpi-label">Rejeitados</div><div class="kpi-value" id="kpi-rejected">—</div><div class="kpi-footer"><span class="kpi-change down">↓ 5%</span><span class="kpi-period">vs mês anterior</span></div><div class="kpi-icon" style="background:#FEF2F2;">❌</div></div>
       </div>
-
-      <!-- Funnel -->
       <div class="chart-card" style="margin-bottom:14px;">
-        <div class="chart-header">
-          <div><div class="chart-title">Funil de Conteúdo</div><div class="chart-sub">Ciclo de vida dos posts — criação → publicação</div></div>
-        </div>
+        <div class="chart-header"><div><div class="chart-title">Funil de Conteúdo</div><div class="chart-sub">Ciclo de vida dos posts</div></div></div>
         <div class="funnel-steps">
           <div class="funnel-step"><div class="funnel-icon" style="background:#EFF6FF;">📝</div><div class="funnel-num">48</div><div class="funnel-label">Criados</div><div class="funnel-pct" style="color:var(--blue)">100%</div></div>
           <div class="funnel-step"><div class="funnel-icon" style="background:#FFFBEB;">📤</div><div class="funnel-num">42</div><div class="funnel-label">Enviados</div><div class="funnel-pct" style="color:var(--yellow)">87%</div></div>
@@ -240,17 +175,9 @@
           <div class="funnel-step"><div class="funnel-icon" style="background:#F5F3FF;">🚀</div><div class="funnel-num">33</div><div class="funnel-label">Publicados</div><div class="funnel-pct" style="color:var(--purple)">69%</div></div>
         </div>
       </div>
-
-      <!-- Charts Row 1: Engajamento + Plataformas -->
       <div class="charts-row charts-row-3">
         <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Engajamento por Plataforma</div><div class="chart-sub">Interações mensais — hover para detalhes</div></div>
-            <div class="chart-actions">
-              <button class="btn btn-xs btn-secondary" onclick="showToast('Exportando dados...','info')">📥 Export</button>
-              <button class="btn btn-xs btn-secondary" onclick="showToast('Ver relatório completo','info')">Ver mais</button>
-            </div>
-          </div>
+          <div class="chart-header"><div><div class="chart-title">Engajamento por Plataforma</div><div class="chart-sub">Interações mensais — hover para detalhes</div></div></div>
           <div class="chart-canvas-wrap"><canvas id="chartEngajamento"></canvas></div>
         </div>
         <div class="chart-card">
@@ -258,80 +185,43 @@
           <div class="chart-canvas-wrap"><canvas id="chartPlatforms"></canvas></div>
         </div>
       </div>
-
-      <!-- Charts Row 2: Posts + Alcance -->
       <div class="charts-row charts-row-2">
         <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Posts por Status</div><div class="chart-sub">Volume mensal empilhado</div></div>
-            <button class="btn btn-xs btn-secondary" onclick="showToast('Relatório gerado!','success')">📊 Relatório</button>
-          </div>
+          <div class="chart-header"><div><div class="chart-title">Posts por Status</div><div class="chart-sub">Volume mensal empilhado</div></div></div>
           <div class="chart-canvas-wrap"><canvas id="chartPosts"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-header">
-            <div><div class="chart-title">Alcance &amp; Impressões</div><div class="chart-sub">Evolução mensal de audiência</div></div>
-            <button class="btn btn-xs btn-secondary" onclick="showToast('Ver detalhes de alcance','info')">Ver mais</button>
-          </div>
+          <div class="chart-header"><div><div class="chart-title">Alcance &amp; Impressões</div><div class="chart-sub">Evolução mensal</div></div></div>
           <div class="chart-canvas-wrap"><canvas id="chartReach"></canvas></div>
         </div>
       </div>
-
-      <!-- Top Posts Table -->
       <div class="table-card">
         <div class="table-card-header">
-          <div><div class="table-card-title">Top Posts do Período</div><div class="table-card-sub">Ordenado por engajamento</div></div>
+          <div><div class="table-card-title">Posts Recentes</div><div class="table-card-sub">Clique para ver detalhes</div></div>
           <button class="btn btn-sm btn-secondary" onclick="showPage('posts',null)">Ver todos</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Post</th><th>Plataforma</th><th>Status</th><th>Data</th><th>Ação</th></tr></thead>
-            <tbody id="recent-posts-tbody">
-            </tbody>
+            <tbody id="recent-posts-tbody"></tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- ══════════════════ CONTAS ══════════════════ -->
+    <!-- CONTAS -->
     <div class="page-section" id="sec-contas">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Contas Conectadas</div>
-          <div class="page-header-sub">Gerencie todas as suas redes sociais em um lugar</div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" onclick="openNewConta()">+ Nova Conta</button>
-        </div>
-      </div>
-      <!-- Platforms info bar -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
-          <span class="si si-ig" style="width:22px;height:22px;font-size:9px;">IG</span> Instagram
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
-          <span class="si si-fb" style="width:22px;height:22px;font-size:9px;">FB</span> Facebook
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
-          <span class="si si-yt" style="width:22px;height:22px;font-size:9px;">YT</span> YouTube
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
-          <span class="si si-tt" style="width:22px;height:22px;font-size:9px;">TT</span> TikTok
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
-          <span class="si si-li" style="width:22px;height:22px;font-size:9px;">IN</span> LinkedIn
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Contas Conectadas</div><div class="page-header-sub">Gerencie todas as suas redes sociais</div></div>
+        <div class="page-header-actions"><button class="btn btn-primary" onclick="openNewConta()">+ Nova Conta</button></div>
       </div>
       <div class="cards-grid" id="accountsGrid"></div>
     </div>
 
-    <!-- ══════════════════ AGENDAMENTOS ══════════════════ -->
+    <!-- AGENDAMENTOS -->
     <div class="page-section" id="sec-agendamentos">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Agendamentos</div>
-          <div class="page-header-sub">Organize e agende seus criativos para publicação</div>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Agendamentos</div><div class="page-header-sub">Organize e agende seus criativos</div></div>
         <div class="page-header-actions">
           <div class="view-toggle">
             <button class="vt-btn active" onclick="setAgendView('lista',this)">☰ Lista</button>
@@ -342,7 +232,6 @@
           <button class="btn btn-secondary" onclick="openNewAgendamento()">📁 Carregar Post</button>
         </div>
       </div>
-
       <div id="agend-lista">
         <div class="table-card">
           <div class="table-card-header">
@@ -357,137 +246,82 @@
           </div>
         </div>
       </div>
-
-      <div id="agend-grade" style="display:none;">
-        <div class="cards-grid" id="agend-cards"></div>
-      </div>
-      <div id="agend-calendario" style="display:none;">
-        <div id="agend-cal"></div>
-      </div>
+      <div id="agend-grade" style="display:none;"><div class="cards-grid" id="agend-cards"></div></div>
+      <div id="agend-calendario" style="display:none;"><div id="agend-cal"></div></div>
     </div>
 
-    <!-- ══════════════════ POSTS ══════════════════ -->
+    <!-- POSTS -->
     <div class="page-section" id="sec-posts">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Posts</div>
-          <div class="page-header-sub">Todos os posts carregados na plataforma</div>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Posts</div><div class="page-header-sub">Todos os posts carregados na plataforma</div></div>
         <div class="page-header-actions">
-          <div class="view-toggle">
-            <button class="vt-btn active" onclick="setViewMode('posts-grid','grade',this)">⊞ Grade</button>
-            <button class="vt-btn" onclick="setViewMode('posts-list','lista',this)">☰ Lista</button>
-          </div>
           <button class="btn btn-primary" onclick="openNewAgendamento()">+ Novo Post</button>
         </div>
       </div>
       <div class="cards-grid" id="posts-grid"></div>
     </div>
 
-    <!-- ══════════════════ EM ANÁLISE ══════════════════ -->
+    <!-- EM ANÁLISE -->
     <div class="page-section" id="sec-analise">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Em Análise</div>
-          <div class="page-header-sub">Posts aguardando aprovação do cliente</div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary" onclick="showToast('Enviando lembretes aos clientes...','info')">📧 Enviar Lembrete</button>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Em Análise</div><div class="page-header-sub">Posts aguardando aprovação do cliente</div></div>
+        <div class="page-header-actions"><button class="btn btn-secondary" onclick="toast('Lembretes enviados!','success')">📧 Enviar Lembrete</button></div>
       </div>
       <div class="cards-grid" id="analise-grid"></div>
     </div>
 
-    <!-- ══════════════════ APROVADOS ══════════════════ -->
+    <!-- APROVADOS -->
     <div class="page-section" id="sec-aprovados">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Aprovados</div>
-          <div class="page-header-sub">Conteúdos aprovados prontos para publicação</div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-primary" onclick="showToast('Publicando selecionados...','success')">🚀 Publicar Selecionados</button>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Aprovados</div><div class="page-header-sub">Conteúdos aprovados prontos para publicação</div></div>
+        <div class="page-header-actions"><button class="btn btn-primary" onclick="toast('Publicando...','success')">🚀 Publicar Selecionados</button></div>
       </div>
       <div class="cards-grid" id="aprovados-grid"></div>
     </div>
 
-    <!-- ══════════════════ REJEITADOS ══════════════════ -->
+    <!-- REJEITADOS -->
     <div class="page-section" id="sec-rejeitados">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Rejeitados</div>
-          <div class="page-header-sub">Posts que precisam de revisão ou correção</div>
-        </div>
-        <div class="page-header-actions">
-          <button class="btn btn-secondary" onclick="showToast('Abrindo histórico...','info')">Ver Histórico</button>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Rejeitados</div><div class="page-header-sub">Posts que precisam de revisão</div></div>
       </div>
       <div class="cards-grid" id="rejeitados-grid"></div>
     </div>
 
-    <!-- ══════════════════ CAMPANHAS ══════════════════ -->
+    <!-- CAMPANHAS -->
     <div class="page-section" id="sec-campanhas">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Campanhas</div>
-          <div class="page-header-sub">Planeje e acompanhe todas as suas campanhas de conteúdo</div>
-        </div>
-        <div class="page-header-actions">
-          <div class="view-toggle">
-            <button class="vt-btn active">⊞ Cards</button>
-            <button class="vt-btn" onclick="setAgendView('calendario',this)">📅 Calendário</button>
-          </div>
-          <button class="btn btn-primary" onclick="openNewCampanha()">+ Nova Campanha</button>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Campanhas</div><div class="page-header-sub">Planeje e acompanhe suas campanhas</div></div>
+        <div class="page-header-actions"><button class="btn btn-primary" onclick="openNewCampanha()">+ Nova Campanha</button></div>
       </div>
-      <!-- Métricas gerais -->
       <div class="metrics-grid" style="margin-bottom:20px;">
-        <div class="metric-card"><div class="metric-name">Campanhas Ativas</div><div class="metric-value" style="color:var(--green);" id="camp-metric-active">2</div><div class="metric-desc">de 3 totais</div></div>
-        <div class="metric-card"><div class="metric-name">Budget Total</div><div class="metric-value" id="camp-metric-budget">R$ 45K</div><div class="metric-desc">este mês</div></div>
-        <div class="metric-card"><div class="metric-name">Posts Totais</div><div class="metric-value" id="camp-metric-posts">84</div><div class="metric-desc">em todas campanhas</div></div>
-        <div class="metric-card"><div class="metric-name">Taxa Aprovação</div><div class="metric-value" style="color:var(--primary);" id="camp-metric-rate">78%</div><div class="metric-desc">média geral</div></div>
+        <div class="metric-card"><div class="metric-name">Campanhas Ativas</div><div class="metric-value" style="color:var(--green);" id="camp-metric-active">—</div><div class="metric-desc">ativas</div></div>
+        <div class="metric-card"><div class="metric-name">Budget Total</div><div class="metric-value" id="camp-metric-budget">—</div><div class="metric-desc">este mês</div></div>
+        <div class="metric-card"><div class="metric-name">Posts Totais</div><div class="metric-value" id="camp-metric-posts">—</div><div class="metric-desc">em campanhas</div></div>
+        <div class="metric-card"><div class="metric-name">Taxa Aprovação</div><div class="metric-value" style="color:var(--primary);" id="camp-metric-rate">—</div><div class="metric-desc">média</div></div>
       </div>
       <div id="campanhas-list"></div>
     </div>
 
-    <!-- ══════════════════ TRÁFEGO PAGO ══════════════════ -->
+    <!-- TRÁFEGO PAGO -->
     <div class="page-section" id="sec-trafego">
       <div class="page-header">
-        <div class="page-header-left">
-          <div class="page-header-title">Tráfego Pago</div>
-          <div class="page-header-sub">Performance e métricas de anúncios pagos por plataforma</div>
-        </div>
+        <div class="page-header-left"><div class="page-header-title">Tráfego Pago</div><div class="page-header-sub">Performance de anúncios por plataforma</div></div>
         <div class="page-header-actions">
-          <select class="filter-select">
-            <option>Todas as plataformas</option>
-            <option>Instagram Ads</option>
-            <option>Facebook Ads</option>
-            <option>Google Ads</option>
-            <option>TikTok Ads</option>
-          </select>
-          <select class="filter-select">
-            <option>Últimos 30 dias</option>
-            <option>Últimos 7 dias</option>
-            <option>Este mês</option>
-          </select>
-          <button class="btn btn-primary" onclick="openModal('modalTrafego')">+ Nova Campanha Paga</button>
+          <select class="filter-select"><option>Todas as plataformas</option><option>Instagram Ads</option><option>Facebook Ads</option><option>Google Ads</option><option>TikTok Ads</option></select>
+          <select class="filter-select"><option>Últimos 30 dias</option><option>Este mês</option></select>
         </div>
       </div>
-
-      <!-- KPIs de tráfego -->
       <div class="metrics-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px;">
-        <div class="metric-card" style="--kpi-color:#F97316;"><div class="metric-name">Investimento Total</div><div class="metric-value">R$ 12.4K</div><div class="metric-desc">este mês</div></div>
+        <div class="metric-card"><div class="metric-name">Investimento Total</div><div class="metric-value">R$ 12.4K</div><div class="metric-desc">este mês</div></div>
         <div class="metric-card"><div class="metric-name">CPC Médio</div><div class="metric-value">R$ 1,24</div><div class="metric-desc">custo por clique</div></div>
         <div class="metric-card"><div class="metric-name">CPM Médio</div><div class="metric-value">R$ 9,80</div><div class="metric-desc">custo por mil imp.</div></div>
         <div class="metric-card"><div class="metric-name">CTR</div><div class="metric-value" style="color:var(--green);">3.8%</div><div class="metric-desc">taxa de cliques</div></div>
         <div class="metric-card"><div class="metric-name">CAC</div><div class="metric-value">R$ 42</div><div class="metric-desc">custo de aquisição</div></div>
         <div class="metric-card"><div class="metric-name">ROAS</div><div class="metric-value" style="color:var(--primary);">4.2x</div><div class="metric-desc">retorno sobre anúncio</div></div>
       </div>
-
       <div class="charts-row charts-row-2">
         <div class="chart-card">
-          <div class="chart-header"><div><div class="chart-title">CPC &amp; CPM por Plataforma</div><div class="chart-sub">Comparativo de custo — hover para valores</div></div></div>
+          <div class="chart-header"><div><div class="chart-title">CPC &amp; CPM por Plataforma</div><div class="chart-sub">Hover para valores detalhados</div></div></div>
           <div class="chart-canvas-wrap"><canvas id="chartTrafego"></canvas></div>
         </div>
         <div class="chart-card">
@@ -495,67 +329,23 @@
           <div class="chart-canvas-wrap"><canvas id="chartInvest"></canvas></div>
         </div>
       </div>
-
-      <div class="table-card" style="margin-top:14px;">
-        <div class="table-card-header">
-          <div><div class="table-card-title">Criativos em Tráfego Pago</div><div class="table-card-sub">Performance individual dos anúncios ativos</div></div>
-          <button class="btn btn-sm btn-secondary" onclick="showToast('Exportando relatório...','info')">📥 Relatório</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Criativo</th><th>Plataforma</th><th>Status</th><th>Investimento</th><th>Cliques</th><th>CTR</th><th>CPC</th><th>ROAS</th></tr></thead>
-            <tbody>
-              <tr style="cursor:pointer;" onclick="showToast('Detalhes do anúncio','info')">
-                <td><span class="td-primary">🛒 Black Friday — Oferta Principal</span></td>
-                <td><span class="si si-ig" style="width:22px;height:22px;font-size:9px;">IG</span></td>
-                <td><span class="badge badge-green">Ativo</span></td>
-                <td class="td-mono">R$ 4.200</td>
-                <td class="td-mono">3.400</td>
-                <td class="td-mono" style="color:var(--green);font-weight:700;">4.1%</td>
-                <td class="td-mono">R$ 1,24</td>
-                <td class="td-mono" style="color:var(--primary);font-weight:700;">5.2x</td>
-              </tr>
-              <tr style="cursor:pointer;" onclick="showToast('Detalhes do anúncio','info')">
-                <td><span class="td-primary">📢 Awareness — Alcance Máximo</span></td>
-                <td><span class="si si-fb" style="width:22px;height:22px;font-size:9px;">FB</span></td>
-                <td><span class="badge badge-green">Ativo</span></td>
-                <td class="td-mono">R$ 2.800</td>
-                <td class="td-mono">1.980</td>
-                <td class="td-mono" style="color:var(--yellow);font-weight:700;">2.8%</td>
-                <td class="td-mono">R$ 0,85</td>
-                <td class="td-mono" style="color:var(--green);font-weight:700;">3.8x</td>
-              </tr>
-              <tr style="cursor:pointer;" onclick="showToast('Detalhes do anúncio','info')">
-                <td><span class="td-primary">🎯 Remarketing — Carrinhos</span></td>
-                <td><span class="si si-meta" style="width:22px;height:22px;font-size:9px;background:linear-gradient(135deg,#0668E1,#E02D69);">M</span></td>
-                <td><span class="badge badge-yellow">Pausado</span></td>
-                <td class="td-mono">R$ 1.600</td>
-                <td class="td-mono">2.100</td>
-                <td class="td-mono" style="color:var(--green);font-weight:700;">5.3%</td>
-                <td class="td-mono">R$ 0,76</td>
-                <td class="td-mono" style="color:var(--primary);font-weight:700;">6.1x</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
 
   </main>
 </div>
 
-<!-- ══════════════ APPROVAL PAGE (public) ══════════════ -->
+<!-- APPROVAL PAGE -->
 <div id="approvalPage" style="display:none;">
   <div class="approval-header">
     <span class="approval-logo-text">AHA</span>
     <div class="approval-logo-sub">Social Planning — Aprovação de Criativo</div>
   </div>
   <div class="approval-card">
-    <div class="approval-media" id="ap-thumb">📷</div>
+    <div class="approval-media" id="ap-thumb"><div style="font-size:72px;">📷</div></div>
     <div class="approval-body">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div class="approval-title" id="ap-title">Título do Criativo</div>
-        <span class="badge" id="ap-status">Em Análise</span>
+        <span class="badge badge-yellow" id="ap-status">Em Análise</span>
       </div>
       <div class="approval-meta">
         <div class="approval-meta-item">📱 <span id="ap-platform">Instagram</span></div>
@@ -566,25 +356,20 @@
         <div class="approval-caption-label">Legenda / Texto</div>
         <div class="approval-caption-text" id="ap-caption">—</div>
       </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label">Comentário (opcional)</label>
+        <textarea class="form-input" id="ap-comment" placeholder="Deixe um comentário ao time..."></textarea>
+      </div>
       <div class="approval-actions">
         <button class="btn-approve" onclick="approvalAction('approve')">✅ Aprovar</button>
         <button class="btn-correct" onclick="approvalAction('correct')">✏️ Solicitar Correção</button>
         <button class="btn-reject"  onclick="approvalAction('reject')">❌ Rejeitar</button>
       </div>
-      <div style="margin-top:20px;">
-        <div class="form-group">
-          <label class="form-label">Comentário (opcional)</label>
-          <textarea class="form-input" id="ap-comment" placeholder="Deixe um comentário ou feedback aqui..."></textarea>
-        </div>
-        <button class="btn btn-secondary" style="width:100%;" onclick="showToast('Comentário enviado!','success')">Enviar Comentário</button>
-      </div>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════ MODALS ══════════════════════════════ -->
-
-<!-- Modal: Novo Agendamento -->
+<!-- MODAL: Novo Agendamento -->
 <div class="modal-overlay" id="modalAgendamento" onclick="if(event.target===this)closeModal('modalAgendamento')">
   <div class="modal">
     <div class="modal-header">
@@ -604,12 +389,10 @@
         <div class="form-group"><label class="form-label">Data de Publicação</label><input class="form-input" type="date" id="ag-date"/></div>
       </div>
       <div class="form-group"><label class="form-label">Campanha</label>
-        <select class="form-select" id="ag-campaign">
-          <option>Black Friday 2026</option><option>Lançamento X</option><option>Awareness Q1</option><option>TikTok Orgânico</option>
-        </select>
+        <input class="form-input" id="ag-campaign" placeholder="Nome da campanha"/>
       </div>
       <div class="form-group"><label class="form-label">Formato</label>
-        <div class="form-checkbox-group">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
           <button type="button" class="tipo-btn btn btn-sm btn-secondary active" data-tipo="image" onclick="selectTipo(this)" style="border-color:var(--primary);background:var(--primary-light);color:var(--primary);">📸 Imagem</button>
           <button type="button" class="tipo-btn btn btn-sm btn-secondary" data-tipo="video" onclick="selectTipo(this)">🎬 Vídeo</button>
           <button type="button" class="tipo-btn btn btn-sm btn-secondary" data-tipo="story" onclick="selectTipo(this)">📱 Story</button>
@@ -623,7 +406,9 @@
         <input type="file" id="ag-file-input" accept="image/*,video/*" style="display:none;" onchange="onFileChange('ag-file-input','ag-file-preview','ag-file-data')"/>
         <input type="hidden" id="ag-file-data"/>
         <div id="ag-file-preview" class="upload-zone" onclick="triggerFile('ag-file-input')" ondrop="onDrop(event,'ag-file-preview','ag-file-data')" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)">
-          <div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4, GIF — máx. 20MB</div>
+          <div class="upload-zone-icon">☁️</div>
+          <div class="upload-zone-text">Arraste ou clique para selecionar</div>
+          <div class="upload-zone-sub">PNG, JPG, MP4, GIF — máx. 15MB</div>
         </div>
       </div>
       <div class="form-grid">
@@ -641,12 +426,12 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalAgendamento')">Cancelar</button>
       <button class="btn btn-secondary" onclick="saveDraft()">💾 Rascunho</button>
-      <button class="btn btn-primary" onclick="saveAgendamento()" id="btn-save-agend">Salvar ✓</button>
+      <button class="btn btn-primary" onclick="saveAgendamento()" id="btn-save-agend">💾 Salvar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Nova Conta -->
+<!-- MODAL: Nova Conta -->
 <div class="modal-overlay" id="modalConta" onclick="if(event.target===this)closeModal('modalConta')">
   <div class="modal">
     <div class="modal-header">
@@ -656,32 +441,35 @@
     <div class="modal-body">
       <div class="form-section">Selecione a Plataforma</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
-        <div onclick="document.getElementById('acc-platform').value='ig';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="ig" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;">
+        <div onclick="document.getElementById('acc-platform').value='ig';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="ig" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
           <div class="si si-ig" style="margin:0 auto 8px;width:32px;height:32px;font-size:14px;">IG</div>
           <div style="font-size:12px;font-weight:600;">Instagram</div>
         </div>
-        <div onclick="document.getElementById('acc-platform').value='fb';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="fb" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;">
+        <div onclick="document.getElementById('acc-platform').value='fb';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="fb" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
           <div class="si si-fb" style="margin:0 auto 8px;width:32px;height:32px;font-size:14px;">FB</div>
           <div style="font-size:12px;font-weight:600;">Facebook</div>
         </div>
-        <div onclick="document.getElementById('acc-platform').value='yt';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="yt" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;">
+        <div onclick="document.getElementById('acc-platform').value='yt';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="yt" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
           <div class="si si-yt" style="margin:0 auto 8px;width:32px;height:32px;font-size:14px;">YT</div>
           <div style="font-size:12px;font-weight:600;">YouTube</div>
         </div>
-        <div onclick="document.getElementById('acc-platform').value='tt';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="tt" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;">
+        <div onclick="document.getElementById('acc-platform').value='tt';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="tt" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
           <div class="si si-tt" style="margin:0 auto 8px;width:32px;height:32px;font-size:14px;">TT</div>
           <div style="font-size:12px;font-weight:600;">TikTok</div>
         </div>
-        <div onclick="document.getElementById('acc-platform').value='li';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="li" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;">
+        <div onclick="document.getElementById('acc-platform').value='li';this.closest('.modal-body').querySelectorAll('[data-pl]').forEach(x=>x.style.border='1px solid var(--border)');this.style.border='2px solid var(--primary)'" data-pl="li" style="text-align:center;padding:16px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;">
           <div class="si si-li" style="margin:0 auto 8px;width:32px;height:32px;font-size:14px;">IN</div>
           <div style="font-size:12px;font-weight:600;">LinkedIn</div>
         </div>
       </div>
       <input type="hidden" id="acc-platform" value="ig"/>
       <div class="form-section">Dados da Conta</div>
-      <div class="form-group"><label class="form-label">Usuário / @handle *</label><input class="form-input" id="acc-handle" placeholder="@suaconta"/></div>
+      <div class="form-group"><label class="form-label">@handle *</label><input class="form-input" id="acc-handle" placeholder="@suaconta"/></div>
       <div class="form-group"><label class="form-label">Nome de Exibição</label><input class="form-input" id="acc-name" placeholder="Nome da Marca"/></div>
-      <div class="form-grid"><div class="form-group"><label class="form-label">Seguidores</label><input class="form-input" id="acc-followers" type="number" placeholder="Ex: 48200" min="0"/></div><div class="form-group"><label class="form-label">Engajamento</label><input class="form-input" id="acc-engagement" placeholder="4.8%"/></div></div><div class="form-group"><label class="form-label">Token (opcional)</label><input class="form-input" placeholder="Token da API"/></div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Seguidores</label><input class="form-input" id="acc-followers" type="number" placeholder="48200" min="0"/></div>
+        <div class="form-group"><label class="form-label">Engajamento</label><input class="form-input" id="acc-engagement" placeholder="4.8%"/></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalConta')">Cancelar</button>
@@ -690,7 +478,7 @@
   </div>
 </div>
 
-<!-- Modal: Nova Campanha -->
+<!-- MODAL: Nova Campanha -->
 <div class="modal-overlay" id="modalCampanha" onclick="if(event.target===this)closeModal('modalCampanha')">
   <div class="modal">
     <div class="modal-header">
@@ -703,10 +491,7 @@
         <div class="form-group"><label class="form-label">Data de Início</label><input class="form-input" type="date" id="camp-start"/></div>
         <div class="form-group"><label class="form-label">Data de Término</label><input class="form-input" type="date" id="camp-end"/></div>
       </div>
-      <div class="form-group"><label class="form-label">Budget Total (R$)</label><input class="form-input" id="camp-budget" placeholder="R$ 10.000"/></div>
-      <div class="form-group"><label class="form-label">Objetivo da Campanha</label>
-        <select class="form-select"><option>Awareness — Reconhecimento de marca</option><option>Consideração — Engajamento</option><option>Conversão — Vendas diretas</option><option>Retenção — Fidelização</option></select>
-      </div>
+      <div class="form-group"><label class="form-label">Budget Total</label><input class="form-input" id="camp-budget" placeholder="R$ 10.000"/></div>
       <div class="form-group"><label class="form-label">Plataformas</label>
         <div class="form-checkbox-group">
           <label class="form-checkbox-label"><input type="checkbox" class="camp-plat-check" value="ig" checked/> 📷 Instagram</label>
@@ -716,7 +501,7 @@
           <label class="form-checkbox-label"><input type="checkbox" class="camp-plat-check" value="li"/> 💼 LinkedIn</label>
         </div>
       </div>
-      <div class="form-group"><label class="form-label">Briefing / Descrição</label><textarea class="form-input" id="camp-desc" placeholder="Descreva os objetivos, público-alvo e diretrizes da campanha..."></textarea></div>
+      <div class="form-group"><label class="form-label">Briefing</label><textarea class="form-input" id="camp-desc" placeholder="Descreva os objetivos e público-alvo..."></textarea></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalCampanha')">Cancelar</button>
@@ -725,7 +510,7 @@
   </div>
 </div>
 
-<!-- Modal: Detalhes do Post -->
+<!-- MODAL: Detalhes do Post -->
 <div class="modal-overlay" id="modalPostDetail" onclick="if(event.target===this)closeModal('modalPostDetail')">
   <div class="modal">
     <div class="modal-header">
@@ -733,7 +518,7 @@
       <button class="modal-close" onclick="closeModal('modalPostDetail')">✕</button>
     </div>
     <div class="modal-body">
-      <div style="background:var(--surface2);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;font-size:60px;margin-bottom:16px;" id="detail-thumb">📷</div>
+      <div id="detail-thumb" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;background:var(--surface2);min-height:80px;display:flex;align-items:center;justify-content:center;font-size:48px;">📷</div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <div style="font-size:18px;font-weight:800;flex:1;" id="detail-title">—</div>
         <span class="badge" id="detail-status">—</span>
@@ -741,7 +526,8 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
         <div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Plataforma</div><div style="font-weight:700;" id="detail-platform">—</div></div>
         <div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Data</div><div style="font-weight:700;" id="detail-date">—</div></div>
-        <div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Tipo</div><div style="font-weight:700;" id="detail-type">—</div></div><div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Campanha</div><div style="font-weight:700;" id="detail-campaign">—</div></div>
+        <div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Tipo</div><div style="font-weight:700;" id="detail-type">—</div></div>
+        <div style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;">Campanha</div><div style="font-weight:700;" id="detail-campaign">—</div></div>
       </div>
       <div class="approval-caption"><div class="approval-caption-label">Legenda</div><div class="approval-caption-text" id="detail-caption">—</div></div>
       <div style="margin-top:10px;"><div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;">Tags</div><div id="detail-tags" style="display:flex;flex-wrap:wrap;gap:4px;">—</div></div>
@@ -749,17 +535,17 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalPostDetail')">Fechar</button>
       <button class="btn btn-secondary" onclick="if(APP.editingId)openShareModal(APP.editingId)">📤 Compartilhar</button>
-      <button class="btn btn-danger btn-sm" onclick="if(APP.editingId){deletePost(APP.editingId);closeModal('modalPostDetail');}">🗑️</button>
+      <button class="btn btn-danger btn-sm" onclick="if(APP.editingId){doDeletePost(APP.editingId);closeModal('modalPostDetail');}">🗑️</button>
       <button class="btn btn-primary" onclick="if(APP.editingId){closeModal('modalPostDetail');openPostEditor(APP.editingId);}">✏️ Editar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Compartilhar Link -->
+<!-- MODAL: Compartilhar -->
 <div class="modal-overlay" id="modalShare" onclick="if(event.target===this)closeModal('modalShare')">
   <div class="modal" style="width:460px;">
     <div class="modal-header">
-      <div><div class="modal-title">📤 Compartilhar para Aprovação</div><div class="modal-subtitle">Envie o link para o cliente revisar</div></div>
+      <div><div class="modal-title">📤 Enviar para Aprovação</div><div class="modal-subtitle">Compartilhe o link com o cliente</div></div>
       <button class="modal-close" onclick="closeModal('modalShare')">✕</button>
     </div>
     <div class="modal-body">
@@ -788,11 +574,12 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalShare')">Fechar</button>
+      <button class="btn btn-secondary" onclick="openApprovalTab()">👁️ Visualizar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Instagram Setup -->
+<!-- MODAL: Instagram Setup -->
 <div class="modal-overlay" id="modalIgSetup" onclick="if(event.target===this)closeModal('modalIgSetup')">
   <div class="modal" style="max-width:520px;">
     <div class="modal-header">
@@ -800,14 +587,16 @@
       <button class="modal-close" onclick="closeModal('modalIgSetup')">✕</button>
     </div>
     <div class="modal-body">
-      <div style="background:var(--primary-light);border:1px solid var(--primary-border);border-radius:var(--radius);padding:14px;margin-bottom:16px;"><div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;">📋 Pré-requisitos</div><div style="font-size:12px;color:var(--text2);line-height:1.7;">Você precisa de um App no Meta Developers com Instagram Graph API. A conta do cliente precisa ser Business ou Creator.</div></div>
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">1</div><div><div style="font-size:13px;font-weight:700;">Criar App no Meta Developers</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">Acesse <a href="https://developers.facebook.com" target="_blank" style="color:var(--primary);">developers.facebook.com</a> → Criar App → Business → Adicionar Instagram Graph API</div></div></div>
-        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">2</div><div><div style="font-size:13px;font-weight:700;">Preencher INSTAGRAM_CONFIG</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">Em <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">js/firebase-config.js</code> preencha o campo <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">appId</code> do INSTAGRAM_CONFIG</div></div></div>
-        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">3</div><div><div style="font-size:13px;font-weight:700;">Adicionar URI de Redirecionamento</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">No Meta Developers adicione como Valid OAuth Redirect URI:<br/><code id="ig-redirect-uri" style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:11px;display:inline-block;margin-top:4px;word-break:break-all;"></code></div></div></div>
-        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--green);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">✓</div><div><div style="font-size:13px;font-weight:700;color:var(--green);">Clique "Conectar" novamente</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">O login OAuth do Instagram abrirá para o cliente autorizar.</div></div></div>
+      <div style="background:var(--primary-light);border:1px solid var(--primary-border);border-radius:var(--radius);padding:14px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;">📋 Pré-requisitos</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.7;">Você precisa de um App no Meta Developers com Instagram Graph API. A conta precisa ser Business ou Creator.</div>
       </div>
-      <div style="margin-top:14px;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;color:var(--text3);">Permissões: instagram_basic, instagram_content_publish, instagram_manage_insights, pages_show_list</div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">1</div><div><div style="font-size:13px;font-weight:700;">Criar App no Meta Developers</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">Acesse <a href="https://developers.facebook.com" target="_blank" style="color:var(--primary);">developers.facebook.com</a> → Criar App → Business → Instagram Graph API</div></div></div>
+        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">2</div><div><div style="font-size:13px;font-weight:700;">Preencher INSTAGRAM_CONFIG</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">Em <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">js/firebase-config.js</code> preencha o <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">appId</code></div></div></div>
+        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">3</div><div><div style="font-size:13px;font-weight:700;">Adicionar Redirect URI</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">No Meta Developers → Valid OAuth Redirect URIs:<br/><code id="ig-redirect-uri" style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:11px;display:inline-block;margin-top:4px;word-break:break-all;"></code></div></div></div>
+        <div style="display:flex;gap:12px;"><div style="width:26px;height:26px;min-width:26px;border-radius:50%;background:var(--green);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">✓</div><div><div style="font-size:13px;font-weight:700;color:var(--green);">Clique "Conectar" novamente</div><div style="font-size:12px;color:var(--text3);margin-top:2px;">O OAuth do Instagram abrirá para o cliente autorizar.</div></div></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modalIgSetup')">Fechar</button>
@@ -816,18 +605,15 @@
   </div>
 </div>
 
-<!-- ══════════════ TOAST ══════════════ -->
+<!-- TOAST -->
 <div class="toast" id="toast">
   <div class="toast-icon">ℹ️</div>
-  <div class="toast-content">
-    <div class="toast-title">Mensagem</div>
-  </div>
+  <div class="toast-content"><div class="toast-title">Mensagem</div></div>
   <div class="toast-line"></div>
 </div>
 
-<!-- ══════════════ SCRIPTS ══════════════ -->
+<!-- SCRIPTS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<!-- Firebase SDKs — ATIVOS. Configure suas credenciais em js/firebase-config.js -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -835,88 +621,15 @@
 <script src="js/firebase-config.js"></script>
 <script src="js/app.js"></script>
 <script>
-// Extra UI helpers
-function setAgendView(view, btn) {
-  ['lista','grade','calendario'].forEach(v => {
-    const el = document.getElementById('agend-' + v);
-    if (el) el.style.display = v === view ? 'block' : 'none';
-  });
-  btn.closest('.view-toggle').querySelectorAll('.vt-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (view === 'grade') {
-    const cards = document.getElementById('agend-cards');
-    if (cards) { cards.innerHTML = document.getElementById('agend-lista').querySelector('tbody').innerHTML.replace(/<tr[^>]*>/g,'').replace(/<\/tr>/g,''); renderPosts(); const posts = LOCAL.get('posts'); cards.innerHTML = posts.map(p => renderPostCard(p)).join(''); }
-  }
-  if (view === 'calendario') renderCalendar('agend-cal', LOCAL.get('posts'));
-}
-
-function setViewMode(gridId, view, btn) {
-  btn.closest('.view-toggle').querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
-function renderCalendar(containerId, posts) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth();
-  const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const today = now.getDate();
-
-  let html = `<div class="calendar-wrap">
-    <div class="cal-header">
-      <button class="btn btn-secondary btn-sm">‹</button>
-      <div class="cal-month">${monthNames[month]} ${year}</div>
-      <button class="btn btn-secondary btn-sm">›</button>
-    </div>
-    <div class="cal-grid">
-      ${dayNames.map(d=>`<div class="cal-day-name">${d}</div>`).join('')}`;
-
-  for (let i = 0; i < firstDay; i++) html += `<div class="cal-day other-month"></div>`;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const isToday = d === today;
-    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayPosts = posts.filter(p => p.date === dateStr);
-    html += `<div class="cal-day${isToday?' today':''}">
-      <div class="cal-day-num">${d}</div>
-      ${dayPosts.map(p=>`<div class="cal-event ${p.status==='approved'?'green':p.status==='rejected'?'red':''}" onclick="showPostDetail('${p.id}')">${p.thumb||'📷'} ${p.title.substring(0,15)}...</div>`).join('')}
-    </div>`;
-  }
-  html += `</div></div>`;
-  container.innerHTML = html;
-}
-
-// Extras
-function exportPostsCSV(){const ps=DB.get('posts');if(!ps.length){toast('Nenhum post.','warning');return;}const h='Título,Plataforma,Status,Data,Campanha,Tipo';const rows=ps.map(p=>[p.title,p.platform,p.status,p.date,p.campaign,p.type].map(x=>'"'+(x||'').replace(/"/g,'""')+'"').join(','));const csv=[h,...rows].join('\n');const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='aha_posts.csv';a.click();toast('CSV exportado! 📥','success');}
 window.showToast=(m,t)=>toast(m,t);
-const _igUri=el('ig-redirect-uri');if(_igUri)_igUri.textContent=window.location.origin+'/instagram-callback.html';
-// Preenche redirect URI no modal IG
-const _igUri = el('ig-redirect-uri'); if(_igUri) _igUri.textContent = window.location.origin + '/instagram-callback.html';
-// Render trafego invest chart
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    const ctx = document.getElementById('chartInvest');
-    if (ctx && typeof Chart !== 'undefined') {
-      new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: ['Instagram','Facebook','Google','TikTok'],
-          datasets: [{ data:[34,23,28,15], backgroundColor:['#F97316','#1877F2','#4285F4','#010101'], borderWidth:3, borderColor:'#fff' }]
-        },
-        options: {
-          responsive:true, maintainAspectRatio:false, cutout:'60%',
-          plugins: {
-            legend: { position:'right', labels:{ font:{ family:"'DM Sans', sans-serif", size:11 }, boxWidth:12, usePointStyle:true }},
-            tooltip: { enabled:true, backgroundColor:'#0F172A', titleColor:'#fff', bodyColor:'#94A3B8', padding:12, cornerRadius:8 }
-          }
-        }
-      });
-    }
-  }, 200);
-});
+function setAgendView(view,btn){
+  ['lista','grade','calendario'].forEach(v=>{const e=document.getElementById('agend-'+v);if(e)e.style.display=v===view?'block':'none';});
+  if(btn){btn.closest('.view-toggle').querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+  if(view==='grade'){const g=document.getElementById('agend-cards');if(g)g.innerHTML=LOCAL.get('posts').map(p=>postCard(p)).join('');}
+  if(view==='calendario')renderCalendar('agend-cal',LOCAL.get('posts'));
+}
+function setViewMode(gid,view,btn){btn.closest('.view-toggle').querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+const _igU=document.getElementById('ig-redirect-uri');if(_igU)_igU.textContent=window.location.origin+'/instagram-callback.html';
 </script>
 </body>
 </html>
