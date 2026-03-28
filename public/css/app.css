@@ -268,7 +268,7 @@ tbody tr:hover td{background:var(--surface2);}
 .post-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:all .25s;cursor:pointer;box-shadow:var(--shadow);}
 .post-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-4px);}
 .post-card-thumb{height:150px;position:relative;overflow:hidden;background:var(--surface2);}
-.post-card-thumb>div{position:absolute;inset:0;}
+/* removed broad rule */
 .post-card-body{padding:14px;}
 .post-card-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;line-height:1.35;}
 .post-card-meta{font-size:11px;color:var(--text3);}
