@@ -3,15 +3,28 @@ const APP = {
   user:null,
   currentPage: localStorage.getItem('aha_page')||'dashboard',
   charts:{}, editingId:null, unsubs:[], agendView:'lista',
-  kanbanCols: JSON.parse(localStorage.getItem('aha_kanban_cols')||'null') || [
-    {id:'draft',    label:'Rascunho',          color:'#64748B', icon:'📝', status:'draft'},
-    {id:'content',  label:'Conteúdo',           color:'#2563EB', icon:'📋', status:'content'},
-    {id:'review',   label:'Revisão',            color:'#7C3AED', icon:'👁️', status:'review'},
-    {id:'approval', label:'Aprovação Cliente',  color:'#D97706', icon:'⏳', status:'approval'},
-    {id:'approved', label:'Aprovado',           color:'#16A34A', icon:'✅', status:'approved'},
-    {id:'rejected', label:'Rejeitados',         color:'#DC2626', icon:'❌', status:'rejected'},
-    {id:'published',label:'Publicado',          color:'#EA580C', icon:'🚀', status:'published'},
-  ]
+  kanbanCols: (()=>{
+    const COLS_V='v5';
+    const DEFAULT=[
+      {id:'draft',    label:'Rascunho',          color:'#64748B', icon:'📝', status:'draft'},
+      {id:'content',  label:'Conteúdo',           color:'#2563EB', icon:'📋', status:'content'},
+      {id:'review',   label:'Revisão',            color:'#7C3AED', icon:'👁', status:'review'},
+      {id:'approval', label:'Aprovação Cliente',  color:'#D97706', icon:'⏳', status:'approval'},
+      {id:'approved', label:'Aprovado',           color:'#16A34A', icon:'✅', status:'approved'},
+      {id:'rejected', label:'Rejeitados',         color:'#DC2626', icon:'❌', status:'rejected'},
+      {id:'published',label:'Publicado',          color:'#EA580C', icon:'🚀', status:'published'},
+    ];
+    try{
+      const saved=JSON.parse(localStorage.getItem('aha_kanban_cols')||'null');
+      // Reset if old version (missing review or rejected)
+      if(!saved||localStorage.getItem('aha_kanban_v')!==COLS_V||!saved.find(c=>c.id==='review')||!saved.find(c=>c.id==='rejected')){
+        localStorage.setItem('aha_kanban_cols',JSON.stringify(DEFAULT));
+        localStorage.setItem('aha_kanban_v',COLS_V);
+        return DEFAULT;
+      }
+      return saved;
+    }catch{return DEFAULT;}
+  })()
 };
 
 const PL  = {ig:'Instagram',fb:'Facebook',yt:'YouTube',tt:'TikTok',li:'LinkedIn',tw:'Twitter/X'};
@@ -61,21 +74,20 @@ function doLogout(){
 }
 
 function showApp(){
-  el('loginPage').style.display='none';el('app').style.display='block';
+  el('loginPage').style.display='none';
+  const appEl=el('app');if(appEl)appEl.style.cssText='display:block;visibility:visible;opacity:1;';
   const u=APP.user;
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
   if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
   if(!LOCAL.get('posts').length)seed();
   startListeners();
-  // FIX IV: restore current page after refresh
-  const savedPage=localStorage.getItem('aha_page')||'dashboard';
   updateBadges();
-  // Small delay to let Firebase listeners populate data first
-  setTimeout(()=>{
-    const navBtn=document.querySelector(`[onclick*="showPage('${savedPage}'"]`)||document.querySelector(`[onclick*='showPage("${savedPage}"']`);
-    showPage(savedPage, navBtn);
-  }, 300);
+  // Restore last visited page (no flash, no delay needed)
+  const savedPage=localStorage.getItem('aha_page')||'dashboard';
+  // Find matching nav btn
+  const navBtn=document.querySelector(`[onclick*="'${savedPage}'"]`);
+  showPage(savedPage, navBtn);
   setInterval(()=>updateBadges(),5000);
 }
 
@@ -495,10 +507,10 @@ function renderCalendar(cid,posts,yr,mo){
           const statusColor=p.status==='approved'?'#16A34A':p.status==='rejected'?'#DC2626':p.status==='pending'?'#D97706':p.status==='review'?'#7C3AED':'#64748B';
           return`<div onclick="event.stopPropagation();openPostDetail('${p.id}')" style="cursor:pointer;border-radius:6px;overflow:hidden;border-left:3px solid ${statusColor};background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:transform .1s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'" title="${esc(p.title)}">
             ${pUrl&&!isVideo(p)
-              ?`<img src="${pUrl}" style="width:100%;height:48px;object-fit:cover;display:block;" loading="lazy"/>`
+              ?`<img src="${pUrl}" style="width:100%;height:56px;object-fit:cover;object-position:center top;display:block;border-radius:4px 4px 0 0;" loading="lazy" onerror="this.style.display='none'"/>`
               :isVideo(p)
-                ?`<div style="height:48px;background:#111;display:flex;align-items:center;justify-content:center;font-size:16px;">▶️</div>`
-                :`<div style="height:36px;background:${statusColor}18;display:flex;align-items:center;justify-content:center;font-size:16px;">${p.thumb||'📷'}</div>`
+                ?`<div style="height:56px;background:#111;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`
+                :`<div style="height:40px;background:${statusColor}18;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">${p.thumb||'📷'}</div>`
             }
             <div style="padding:3px 6px 4px;background:#fff;">
               <div style="display:flex;align-items:center;gap:3px;">
@@ -732,7 +744,7 @@ async function loadApprovalPost(id){
       const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
       prevDiv.style.display='block';
       prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong style="color:var(--text)">${msgs[p.reviewAction]||p.reviewAction}</strong> em ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`;
-      document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
+      // Buttons remain active — client can change decision
     }else{prevDiv.style.display='none';}
   }
   if(p.status!=='pending'&&p.status!=='draft'){showApprovalResult(p.status);}
@@ -776,7 +788,7 @@ async function approvalAction(action){
   showApprovalResult(finalStatus);
   const prevDiv=el('ap-prev-action');
   if(prevDiv){const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};prevDiv.style.display='block';prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong>${msgs[action]}</strong> em ${new Date().toLocaleString('pt-BR')}</div>`;}
-  document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
+  // Do NOT disable buttons — client must be able to change action
 }
 
 async function saveApprovalComment(){
