@@ -191,13 +191,40 @@ function carouselThumbBg(p){
 }
 
 function thumbInline(p,size=36){
+  // Carousel: show first slide thumbnail
+  if(p.type==='carousel'&&p.slides?.length){
+    const first=p.slides[0];
+    if(first.fileUrl&&first.fileType!=='video'){
+      return`<img src="${first.fileUrl}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;vertical-align:middle;flex-shrink:0;position:relative;" loading="lazy" onerror="this.style.display='none'"/>`;
+    }
+    return`<span style="font-size:${Math.round(size*.7)}px;vertical-align:middle;flex-shrink:0;">${first.fileType==='video'?'🎬':'🎠'}</span>`;
+  }
   const url=getFileUrl(p);
   if(url&&!isVideo(p))return`<img src="${url}" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;vertical-align:middle;flex-shrink:0;" loading="lazy" onerror="this.style.display='none'"/>`;
   return`<span style="font-size:${Math.round(size*.7)}px;vertical-align:middle;flex-shrink:0;">${isVideo(p)?'🎬':(p.thumb||'📷')}</span>`;
 }
 function thumbFull(p){
   const url=getFileUrl(p);
-  if(url){if(isVideo(p))return`<video src="${url}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;"></video>`;return`<img src="${url}" style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius);background:var(--surface2);display:block;" loading="lazy"/>`;}
+  // Video with IndexedDB playback
+  if(isVideo(p)){
+    if(p.videoKey){
+      const divId='vplay_'+p.id+'_'+Date.now();
+      setTimeout(async()=>{
+        const blob=await VDB.load(p.videoKey);
+        const div=document.getElementById(divId);
+        if(div&&blob){
+          const src=URL.createObjectURL(blob);
+          div.innerHTML=`<video src="${src}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
+        }else if(div){
+          div.innerHTML=`<div style="height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:36px;gap:8px;background:#111;border-radius:var(--radius);">🎬<div style="font-size:12px;color:#94A3B8;">Vídeo não disponível localmente</div></div>`;
+        }
+      },50);
+      return`<div id="${divId}">${url?`<div style="position:relative;border-radius:var(--radius);overflow:hidden;cursor:pointer;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;">▶️</span></div></div>`:`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:48px;background:#111;border-radius:var(--radius);">🎬</div>`}</div>`;
+    }
+    if(url)return`<video src="${url}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
+    return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:#111;border-radius:var(--radius);">🎬</div>`;
+  }
+  if(url)return`<img src="${url}" style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius);background:var(--surface2);display:block;" loading="lazy"/>`;
   return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:var(--surface2);border-radius:var(--radius);">${p.thumb||'📷'}</div>`;
 }
 
@@ -600,38 +627,78 @@ function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-ov
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 async function onDrop(e,previewId,dataId){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('drag-over');const f=e.dataTransfer?.files[0];if(f)await processFile(f,previewId,dataId);}
 async function onFileChange(inputId,previewId,dataId){const input=el(inputId);if(!input||!input.files[0])return;await processFile(input.files[0],previewId,dataId);input.value='';}
+// ── IndexedDB for large video storage ────────────────────────
+const VDB={
+  db:null,
+  open(){
+    return new Promise((res,rej)=>{
+      if(this.db){res(this.db);return;}
+      const req=indexedDB.open('aha_videos',1);
+      req.onupgradeneeded=e=>{e.target.result.createObjectStore('videos');};
+      req.onsuccess=e=>{this.db=e.target.result;res(this.db);};
+      req.onerror=()=>rej(req.error);
+    });
+  },
+  async save(key,blob){
+    const db=await this.open();
+    return new Promise((res,rej)=>{
+      const tx=db.transaction('videos','readwrite');
+      tx.objectStore('videos').put(blob,key);
+      tx.oncomplete=()=>res(key);
+      tx.onerror=()=>rej(tx.error);
+    });
+  },
+  async load(key){
+    const db=await this.open();
+    return new Promise((res,rej)=>{
+      const tx=db.transaction('videos','readonly');
+      const req=tx.objectStore('videos').get(key);
+      req.onsuccess=()=>res(req.result||null);
+      req.onerror=()=>res(null);
+    });
+  },
+};
+
 async function processFile(file,previewId,dataId){
   const isImg=file.type.startsWith('image/'),isVid=file.type.startsWith('video/');
-  if(!isImg&&!isVid){toast('Use PNG, JPG ou MP4.','warning');return;}
+  if(!isImg&&!isVid){toast('Formato não suportado. Use PNG, JPG, MP4, MOV.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
-  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:10px;"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);">Processando... ${isVid?'(vídeo pode demorar)':''}</div></div>`;
+  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);font-weight:600;">${isVid?'🎬 Processando vídeo...':'📸 Comprimindo imagem...'}</div>${isVid?`<div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB — aguarde</div>`:''}</div>`;
   try{
     if(isImg){
       const compressed=await compressImage(file);
       if(dataEl)dataEl.value=compressed;
-      if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-      toast(`✅ ${file.name} carregado!`,'success');
+      if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+      toast(`✅ Imagem carregada!`,'success');
     } else {
-      // FIX III: Read video as base64 so it can be played back
-      const videoB64=await fileToBase64(file);
-      const videoSrc='data:'+file.type+';base64,'+videoB64;
-      if(dataEl)dataEl.value=videoSrc;
-      // Preview: actual playable video tag
-      if(prev)prev.innerHTML=`<video src="${videoSrc}" controls style="width:100%;height:160px;border-radius:var(--radius);background:#000;display:block;" preload="metadata"></video>`;
-      toast(`✅ Vídeo "${file.name}" carregado!`,'success');
+      if(file.size>100*1024*1024){toast('⚠️ Vídeo maior que 100MB.','warning');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande</div>`;return;}
+      // 1. Extract thumbnail for display in all views
+      const thumb=await videoThumbnail(file);
+      // 2. Create object URL for immediate preview
+      const objUrl=URL.createObjectURL(file);
+      // 3. Store video blob in IndexedDB for persistence across sessions
+      const vKey='vid_'+Date.now();
+      try{await VDB.save(vKey,file);}catch(e){console.warn('IndexedDB save failed:',e);}
+      // 4. Store reference: thumbnail for display + IndexedDB key for playback
+      const videoRef=JSON.stringify({thumb,vKey,name:file.name,size:file.size,type:file.type,objUrl});
+      if(dataEl)dataEl.value=videoRef;
+      // Preview with actual video
+      if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video id="vid-preview" src="${objUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">🎬 ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
+      toast(`✅ Vídeo "${file.name}" pronto!`,'success');
     }
   }catch(e){
-    toast('Erro: '+e.message,'error');
-    if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div>`;
+    console.error(e);
+    toast('Erro ao processar: '+e.message,'error');
+    if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Erro — tente novamente</div>`;
   }
 }
 
 function fileToBase64(file){
   return new Promise((resolve,reject)=>{
-    if(file.size>50*1024*1024){reject(new Error('Vídeo muito grande. Use max 50MB.'));return;}
+    if(file.size>100*1024*1024){reject(new Error('Máx. 100MB.'));return;}
     const reader=new FileReader();
     reader.onload=e=>resolve(e.target.result.split(',')[1]);
-    reader.onerror=()=>reject(new Error('Erro ao ler vídeo.'));
+    reader.onerror=()=>reject(new Error('Erro ao ler arquivo.'));
     reader.readAsDataURL(file);
   });
 }
@@ -765,10 +832,29 @@ function openPostEditor(id){
   toggleCarouselSection(p.type||'image');
   if(p.type==='carousel'&&p.slides){_carouselSlides=[...p.slides];renderCarouselSlots();}else{_carouselSlides=[];}
   const prev=el('ag-file-preview'),url=getFileUrl(p);
-  if(url&&prev&&p.type!=='carousel'){
-    if(isVideo(p))prev.innerHTML=`<div style="height:120px;background:#000;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div>`;
-    else prev.innerHTML=`<img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-    sv('ag-file-data',p.fileUrl||'');
+  if(prev&&p.type!=='carousel'){
+    if(isVideo(p)){
+      if(p.videoKey){
+        // Load from IndexedDB for preview
+        VDB.load(p.videoKey).then(blob=>{
+          if(blob){const src=URL.createObjectURL(blob);prev.innerHTML=`<video src="${src}" controls style="width:100%;height:160px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;}
+          else if(url){prev.innerHTML=`<div style="position:relative;"><img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);border-radius:var(--radius);">▶️</div></div>`;}
+        });
+        sv('ag-file-data',JSON.stringify({vKey:p.videoKey,thumb:p.fileUrl||'',name:p.videoName||'video.mp4',type:p.videoType||'video/mp4'}));
+      } else if(url){
+        prev.innerHTML=`<video src="${url}" controls style="width:100%;height:160px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
+        sv('ag-file-data',p.fileUrl||'');
+      } else {
+        prev.innerHTML=`<div style="height:120px;background:#111;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-size:36px;">🎬</div>`;
+        sv('ag-file-data','');
+      }
+    } else if(url){
+      prev.innerHTML=`<img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+      sv('ag-file-data',p.fileUrl||'');
+    } else {
+      prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Sem arquivo</div>`;
+      sv('ag-file-data','');
+    }
   }else if(prev){prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div>`;sv('ag-file-data','');}
   setText('modalAgendTitulo','✏️ Editar Post');closeModal('modalPostDetail');openModal('modalAgendamento');
 }
@@ -824,6 +910,7 @@ async function saveAgendamento(){
     type:tipo,fileUrl,fileType,
     thumb:fileUrl?null:(TEMO[tipo]||'📸'),
     slides:tipo==='carousel'?[..._carouselSlides]:undefined,
+    ...data_extra,
   };
   closeModal('modalAgendamento');
   try{
@@ -921,56 +1008,42 @@ function setupApprovalPage(){
 
 async function loadApprovalPost(id){
   const appEl=el('approvalPage');
-  // Spinner while loading
-  if(appEl){
-    const card=appEl.querySelector('.approval-card');
-    if(card)card.innerHTML=`<div style="padding:80px 40px;text-align:center;"><div style="width:44px;height:44px;border:4px solid #FED7AA;border-top-color:#F97316;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px;"></div><div style="font-size:15px;color:#64748B;font-weight:700;margin-bottom:6px;">Carregando criativo...</div><div style="font-size:12px;color:#94A3B8;">Aguarde um momento</div></div>`;
-  }
+  const showSpinner=(msg='Carregando...')=>{
+    const card=appEl?.querySelector('.approval-card');
+    if(card)card.innerHTML=`<div style="padding:80px 40px;text-align:center;"><div style="width:44px;height:44px;border:4px solid #FED7AA;border-top-color:#F97316;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px;"></div><div style="font-size:15px;color:#64748B;font-weight:700;">${msg}</div></div>`;
+  };
+  showSpinner('Carregando criativo...');
 
-  // 1. Wait for Firebase SDK scripts to load (up to 10s)
-  await new Promise(resolve=>{
+  // Helper: timeout wrapper
+  const withTimeout=(promise,ms,fallback=null)=>Promise.race([promise,new Promise(r=>setTimeout(()=>r(fallback),ms))]);
+
+  // 1. Wait for Firebase SDK (max 5s)
+  await withTimeout(new Promise(resolve=>{
     if(typeof firebase!=='undefined'){resolve();return;}
-    let n=0; const t=setInterval(()=>{n++;if(typeof firebase!=='undefined'||n>50){clearInterval(t);resolve();}},200);
-  });
+    const t=setInterval(()=>{if(typeof firebase!=='undefined'){clearInterval(t);resolve();}},150);
+  }),5000);
 
-  // 2. Initialize Firebase
-  initFirebase();
-
-  // 3. Sign in anonymously so Firestore rules can allow read
-  if(_firebaseReady&&_auth){
-    try{
-      if(!_auth.currentUser){
-        await _auth.signInAnonymously().catch(()=>{});
-      }
-    }catch(e){}
-  }
-
-  // 4. Wait for Firebase to be ready (up to 6s)
-  if(!_firebaseReady){
-    await new Promise(resolve=>{
-      let n=0; const t=setInterval(()=>{n++;if(_firebaseReady||n>30){clearInterval(t);resolve();}},200);
-    });
-  }
-
-  // 5. Fetch post — try Firebase first (works on ANY device, not just creator's)
-  let p=null;
-  if(_firebaseReady){
-    // Try up to 3 times (network can be slow on mobile)
-    for(let attempt=0;attempt<3&&!p;attempt++){
-      try{
-        p=await FS.get('posts',id);
-        if(p) break;
-      }catch(e){
-        console.warn('FS.get attempt',attempt+1,'failed:',e.message);
-        if(attempt<2) await new Promise(r=>setTimeout(r,1000));
-      }
+  // 2. Init + anonymous sign-in (all in one go, max 4s)
+  try{
+    initFirebase();
+    if(_firebaseReady&&_auth&&!_auth.currentUser){
+      await withTimeout(_auth.signInAnonymously(),3000);
     }
+  }catch(e){}
+
+  // 3. Fetch — try Firestore directly (allow read:if true), fallback localStorage
+  let p=null;
+  if(_firebaseReady&&_db){
+    try{
+      // Direct Firestore REST — bypasses auth issues entirely
+      const snap=await withTimeout(_db.collection('posts').doc(id).get(),8000);
+      if(snap&&snap.exists) p={id:snap.id,...snap.data()};
+    }catch(e){console.warn('Firestore fetch:',e.message);}
   }
-  // Fallback: localStorage (only works if creator is on same device)
   if(!p) p=LOCAL.find('posts',id);
 
   if(!p){
-    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;line-height:1.7;">Este link pode ter expirado ou o post foi removido.<br/>Se o problema persistir, peça um novo link.</p></div></div>`;
+    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:56px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;line-height:1.7;">Este link pode ter expirado ou o post foi removido.<br/>Peça um novo link ao criativo.</p></div></div>`;
     return;
   }
   window._approvalId=id;window._approvalPost=p;
