@@ -270,6 +270,12 @@
 .cal-day { cursor: pointer; }
 .cal-day:hover { background: var(--surface2); }
 
+
+/* ── Kanban dragging ── */
+.kanban-card.dragging { opacity: 0.35 !important; transform: rotate(2deg) scale(0.97); }
+.kanban-col.drag-over { background: var(--primary-light) !important; border: 2px dashed var(--primary) !important; }
+.kanban-col.drag-over .kanban-col-body { background: transparent; }
+
 </style>
 </head>
 <body>
@@ -396,21 +402,7 @@
         <div class="nav-item" onclick="showPage('revisao',this)" style="font-size:12px;">👁️ Revisão <span class="nav-badge yellow" id="badge-revisao">0</span></div>
         <div class="nav-item" onclick="showPage('analise',this)" style="font-size:12px;">⏳ Em Análise <span class="nav-badge yellow" id="badge-analise">0</span></div>
         <div class="nav-item" onclick="showPage('aprovados',this)" style="font-size:12px;">✅ Aprovados</div>
-        <div class="nav-item" onclick="showPage('rejeitados',this)" style="font-size:12px;">❌ Rejeitados</div>
-      </div>
-      <div class="nav-item" onclick="showPage('analise',this)">
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
-        Em Análise
-        <span class="nav-badge yellow" id="badge-analise">2</span>
-      </div>
-      <div class="nav-item" onclick="showPage('aprovados',this)">
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/></svg>
-        Aprovados
-      </div>
-      <div class="nav-item" onclick="showPage('rejeitados',this)">
-        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"/></svg>
-        Rejeitados
-        <span class="nav-badge red" id="badge-rejeitados">0</span>
+        <div class="nav-item" onclick="showPage('rejeitados',this)" style="font-size:12px;">❌ Rejeitados <span class="nav-badge red" id="badge-rejeitados">0</span></div>
       </div>
     </div>
 
@@ -821,6 +813,7 @@
         <button class="btn-correct" onclick="approvalAction('correct')">✏️ Solicitar Correção</button>
         <button class="btn-reject" onclick="approvalAction('reject')">❌ Rejeitar</button>
       </div>
+      <div id="ap-prev-action" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;"></div>
       <div id="ap-result" style="display:none;"></div>
       <div style="margin-top:20px;">
         <div class="form-group">
