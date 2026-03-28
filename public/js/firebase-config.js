@@ -40,6 +40,10 @@ const LOCAL = {
 };
 
 const FS = {
+  async getAll(col) {
+    if (!_db) return null;
+    try { const snap = await _db.collection(col).orderBy('createdAt','desc').get(); return snap.docs.map(d=>({id:d.id,...d.data()})); } catch { return null; }
+  },
   async get(col, id) {
     if (!_db) return null;
     try { const d = await _db.collection(col).doc(id).get(); return d.exists ? { id: d.id, ...d.data() } : null; } catch { return null; }
@@ -68,6 +72,10 @@ const FS = {
 };
 
 const AUTH = {
+  async signInAnonymous() {
+    if (!_auth) return null;
+    try { const r = await _auth.signInAnonymously(); return r.user; } catch(e) { return null; }
+  },
   async loginGoogle() {
     if (!_auth) return null;
     try { const r = await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); return r.user; } catch(e) { console.error('Google login:', e.message); return null; }
@@ -127,7 +135,8 @@ const DB = {
   async add(col, data)     { if (_firebaseReady) { const r = await FS.add(col, data);     if (r) return r; } return LOCAL.add(col, data); },
   async update(col, id, d) { if (_firebaseReady) { const r = await FS.update(col, id, d); if (r) { LOCAL.update(col, id, d); return r; } } return LOCAL.update(col, id, d); },
   async remove(col, id)    { if (_firebaseReady) await FS.delete(col, id); LOCAL.remove(col, id); },
-  async find(col, id)      { if (_firebaseReady) { const r = await FS.get(col, id); if (r) return r; } return LOCAL.find(col, id); },
+  async find(col, id)      { if (_firebaseReady) { const r = await FS.get(col, id); if (r) { return r; } } return LOCAL.find(col, id); },
+  async getAll(col)        { if (_firebaseReady) { const docs = await FS.getAll(col); if (docs) { LOCAL.set(col, docs); return docs; } } return LOCAL.get(col); },
   listen(col, cb) {
     if (_firebaseReady) return FS.onSnapshot(col, docs => { LOCAL.set(col, docs); cb(docs); });
     cb(LOCAL.get(col));
