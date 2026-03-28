@@ -1,10 +1,10 @@
 const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyD2X_1xkLtAMUtdSCyuFuLJzsnWg1QN4NE",
+  apiKey:            "AIzaSyBI37N7zGJB6OL5ISLHjLeCvTOmh0avUBo",
   authDomain:        "ahasocialplanning.firebaseapp.com",
   projectId:         "ahasocialplanning",
   storageBucket:     "ahasocialplanning.firebasestorage.app",
   messagingSenderId: "196747989859",
-  appId:             "1:196747989859:web:8766d3bec205219e66f956",
+  appId:             "1:196747989859:web:0766d3bec205219e66f956",
   measurementId:     "G-6X9MM77R3V"
 };
 
