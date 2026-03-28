@@ -879,21 +879,60 @@ function setupApprovalPage(){
   const hideAll=()=>{
     const lp=el('loginPage');if(lp)lp.style.display='none';
     const ap2=el('app');if(ap2)ap2.style.display='none';
-    const ap=el('approvalPage');if(ap)ap.style.display='block';
+    const ap=el('approvalPage');if(ap){ap.style.display='block';}
   };
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});}
-  else{hideAll();loadApprovalPost(id);}
+  // Run as soon as DOM is ready
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});
+  } else {
+    hideAll();
+    loadApprovalPost(id);
+  }
 }
 
 async function loadApprovalPost(id){
-  initFirebase();
-  await new Promise(r=>setTimeout(r,600));
-  let p=LOCAL.find('posts',id);
-  if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
-
+  // Show loading state immediately
   const appEl=el('approvalPage');
+  if(appEl){
+    const card=appEl.querySelector('.approval-card');
+    if(card)card.innerHTML=`<div style="padding:60px;text-align:center;"><div style="width:40px;height:40px;border:4px solid #FED7AA;border-top-color:#F97316;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px;"></div><div style="font-size:14px;color:#64748B;font-weight:600;">Carregando criativo...</div></div>`;
+  }
+
+  // Wait for Firebase SDK to be available (max 8s)
+  const waitForFirebase=()=>new Promise(resolve=>{
+    if(typeof firebase!=='undefined'){resolve();return;}
+    let tries=0;
+    const t=setInterval(()=>{
+      tries++;
+      if(typeof firebase!=='undefined'||tries>40){clearInterval(t);resolve();}
+    },200);
+  });
+  await waitForFirebase();
+
+  // Init Firebase
+  initFirebase();
+
+  // Wait for Firebase to be ready (max 5s)
+  if(!_firebaseReady){
+    await new Promise(resolve=>{
+      let tries=0;
+      const t=setInterval(()=>{
+        tries++;
+        if(_firebaseReady||tries>25){clearInterval(t);resolve();}
+      },200);
+    });
+  }
+
+  // Try to fetch post — Firebase first (client device has no localStorage)
+  let p=null;
+  if(_firebaseReady){
+    try{p=await FS.get('posts',id);}catch(e){console.warn('FS.get failed:',e);}
+  }
+  // Fallback to localStorage (same device as creator)
+  if(!p)p=LOCAL.find('posts',id);
+
   if(!p){
-    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou foi removido.</p></div></div>`;
+    if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou foi removido.</p><p style="color:#94A3B8;font-size:12px;margin-top:8px;">Verifique se o link está correto ou peça um novo link ao criativo.</p></div></div>`;
     return;
   }
   window._approvalId=id;window._approvalPost=p;
@@ -918,11 +957,20 @@ async function loadApprovalPost(id){
   // Restaura comentário anterior
   if(p.clientComment){const ce=el('ap-comment');if(ce)ce.value=p.clientComment;}
 
-  // Preenche workflow selector
+  // Preenche workflow selector — use APP.kanbanCols or default cols
   const wfSel=el('ap-workflow-select');
   if(wfSel){
+    const cols=APP.kanbanCols&&APP.kanbanCols.length?APP.kanbanCols:[
+      {id:'draft',label:'Rascunho',icon:'📝',status:'draft'},
+      {id:'content',label:'Conteúdo',icon:'📋',status:'content'},
+      {id:'review',label:'Revisão',icon:'👁',status:'review'},
+      {id:'approval',label:'Aprovação Cliente',icon:'⏳',status:'approval'},
+      {id:'approved',label:'Aprovado',icon:'✅',status:'approved'},
+      {id:'rejected',label:'Rejeitados',icon:'❌',status:'rejected'},
+      {id:'published',label:'Publicado',icon:'🚀',status:'published'},
+    ];
     wfSel.innerHTML=`<option value="">— Selecionar coluna —</option>`+
-      APP.kanbanCols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
+      cols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
   }
 
   // Histórico da última ação
@@ -959,7 +1007,8 @@ async function approvalAction(action){
   const comment=v('ap-comment')||'';
   const wfSel=el('ap-workflow-select');
   const workflowId=wfSel?wfSel.value:'';
-  const targetCol=workflowId?APP.kanbanCols.find(c=>c.id===workflowId):null;
+  const _cols=APP.kanbanCols&&APP.kanbanCols.length?APP.kanbanCols:[{id:'draft',label:'Rascunho',status:'draft'},{id:'content',label:'Conteúdo',status:'content'},{id:'review',label:'Revisão',status:'review'},{id:'approval',label:'Aprovação Cliente',status:'approval'},{id:'approved',label:'Aprovado',status:'approved'},{id:'rejected',label:'Rejeitados',status:'rejected'},{id:'published',label:'Publicado',status:'published'}];
+  const targetCol=workflowId?_cols.find(c=>c.id===workflowId):null;
   const finalStatus=targetCol?(targetCol.status||targetCol.id):ns;
 
   const updateData={status:finalStatus,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action,clientWorkflow:workflowId};
@@ -986,7 +1035,8 @@ async function saveApprovalComment(){
   const wfSel=el('ap-workflow-select');
   const workflowId=wfSel?wfSel.value:'';
   const updateData={clientComment:comment,commentSavedAt:new Date().toISOString()};
-  if(workflowId){const col=APP.kanbanCols.find(c=>c.id===workflowId);if(col){updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}}
+  const _cols2=APP.kanbanCols&&APP.kanbanCols.length?APP.kanbanCols:[{id:'draft',status:'draft'},{id:'content',status:'content'},{id:'review',status:'review'},{id:'approval',status:'approval'},{id:'approved',status:'approved'},{id:'rejected',status:'rejected'},{id:'published',status:'published'}];
+  if(workflowId){const col=_cols2.find(c=>c.id===workflowId);if(col){updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}}
   LOCAL.update('posts',id,updateData);
   try{
     await DB.update('posts',id,updateData);
