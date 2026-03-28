@@ -169,17 +169,22 @@ function getFileUrl(p){
 function isVideo(p){return p.fileType==='video'||(p.fileUrl&&(p.fileUrl.startsWith('data:video')||p.fileUrl.startsWith('data:application/octet')));}
 function thumbBg(p){
   const url=getFileUrl(p);
-  if(url){if(isVideo(p))return`<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div>`;return`<div style="position:absolute;inset:0;background-image:url('${encodeURI(url)}');background-size:cover;background-position:center;"></div>`;}
-  return`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">${p.thumb||'📷'}</div>`;
+  if(url){
+    if(isVideo(p))return`<div style="position:absolute;inset:0;z-index:1;background:#000;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div>`;
+    // Use <img> for reliable rendering — works with both URLs and base64
+    return`<img src="${url}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;" loading="lazy" onerror="this.style.display='none'"/>`;
+  }
+  return`<div style="position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">${p.thumb||'📷'}</div>`;
 }
-// Carousel thumb: show first slide with overlay
+// Carousel thumb: show first slide — uses <img> for reliable base64 rendering
 function carouselThumbBg(p){
   if(!p.slides||!p.slides.length)return thumbBg(p);
   const first=p.slides[0];
   if(first.fileUrl){
     if(first.fileType==='video')
-      return`<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;font-size:28px;">▶️</div>`;
-    return`<div style="position:absolute;inset:0;background-image:url('${encodeURI(first.fileUrl)}');background-size:cover;background-position:center;"></div>`;
+      return`<img src="${first.fileUrl.startsWith('data:video')?'':first.fileUrl}" style="display:none"/><div style="position:absolute;inset:0;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px;">▶️</div>`;
+    // Use <img> not background-image for reliable base64 display
+    return`<img src="${first.fileUrl}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;" loading="lazy"/>`;
   }
   return`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">🎠</div>`;
 }
@@ -226,11 +231,12 @@ function postCard(p){
   // FIX II: show client comment badge on card
   const hasComment=p.clientComment&&p.clientComment.trim().length>0;
   return`<div class="post-card" onclick="openPostDetail('${p.id}')">
-    <div class="post-card-thumb" style="position:relative;overflow:hidden;">${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
-      <div style="position:absolute;top:8px;left:8px;z-index:1;"><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></div>
-      <div style="position:absolute;top:8px;right:8px;z-index:1;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span></div>
-      ${p.type==='carousel'&&p.slides?.length?`<div style="position:absolute;bottom:6px;right:6px;z-index:1;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;backdrop-filter:blur(4px);">🎠 ${p.slides.length} slides</div>`:''}
-      ${hasComment?`<div style="position:absolute;bottom:6px;left:6px;z-index:1;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬</div>`:''}
+    <div class="post-card-thumb">
+      ${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
+      <span class="si ${PSI[p.platform]||''}" style="position:absolute;top:8px;left:8px;z-index:2;width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span>
+      <span class="badge ${SB[p.status]||'badge-gray'}" style="position:absolute;top:8px;right:8px;z-index:2;font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span>
+      ${p.type==='carousel'&&p.slides?.length?`<span style="position:absolute;bottom:6px;right:6px;z-index:2;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;">🎠 ${p.slides.length} slides</span>`:''}
+      ${hasComment?`<span style="position:absolute;bottom:6px;left:6px;z-index:2;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬</span>`:''}
     </div>
     <div class="post-card-body"><div class="post-card-title">${esc(p.title)}</div><div class="post-card-meta">${p.date||'Sem data'} · ${PL[p.platform]||p.platform}</div>${p.campaign?`<div class="post-card-meta" style="margin-top:2px;">📋 ${esc(p.campaign)}</div>`:''}</div>
     <div class="post-card-footer">
@@ -781,8 +787,12 @@ function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.cl
 async function saveAgendamento(){
   const title=v('ag-title')?.trim(),platform=v('ag-platform');
   if(!title){toast('Informe o título. ⚠️','warning');return;}
-  // Guard: prevent double-save
-  if(APP._saving){return;} APP._saving=true;
+  // Guard: prevent double-save (any source)
+  if(APP._saving){toast('Aguarde...','info');return;}
+  APP._saving=true;
+  // Snapshot editingId immediately — prevents race condition where
+  // closeModal or another event nullifies it before DB operations finish
+  const editingId=APP.editingId||null;
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
   const fileRaw=v('ag-file-data');
   let fileUrl=null,fileType='image';
@@ -794,8 +804,8 @@ async function saveAgendamento(){
       fileType=fileRaw.startsWith('data:video')?'video':'image';
     }
   }
-  if(APP.editingId&&!fileRaw&&tipo!=='carousel'){
-    const orig=LOCAL.find('posts',APP.editingId);
+  if(editingId&&!fileRaw&&tipo!=='carousel'){
+    const orig=LOCAL.find('posts',editingId);
     if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;}
   }
   const data={
@@ -811,10 +821,10 @@ async function saveAgendamento(){
   };
   closeModal('modalAgendamento');
   try{
-    if(APP.editingId){
+    if(editingId){
       // Update — always safe, no duplication risk
-      LOCAL.update('posts',APP.editingId,data);
-      await DB.update('posts',APP.editingId,data);
+      LOCAL.update('posts',editingId,data);
+      await DB.update('posts',editingId,data);
       toast('Post atualizado! ✅','success');
       APP.editingId=null;
     } else {
