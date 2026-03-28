@@ -269,6 +269,7 @@ function kanbanCard(p,col){
     id="kcard-${p.id}"
     ondragstart="kanbanDragStart(event,'${p.id}','${col.id}')"
     ondragend="kanbanDragEnd(event)"
+    ondragover="event.preventDefault();"
     onclick="openPostDetail('${p.id}')">
     ${url?`<div class="kanban-card-thumb">${isVideo(p)?`<div style="background:#000;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">▶️</div>`:`<img src="${url}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"/>`}</div>`
     :`<div style="height:60px;background:linear-gradient(135deg,var(--surface2),var(--surface3));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:8px;">${p.thumb||'📷'}</div>`}
@@ -287,28 +288,41 @@ function kanbanCard(p,col){
 
 function kanbanDragStart(e,postId,colId){
   _dragId=postId;_dragCol=colId;
+  e.dataTransfer.setData('text/plain', postId);
   e.dataTransfer.effectAllowed='move';
-  setTimeout(()=>{const c=el('kcard-'+postId);if(c)c.style.opacity='.4';},0);
+  const card=el('kcard-'+postId);
+  if(card){setTimeout(()=>{card.classList.add('dragging');},0);}
 }
 function kanbanDragEnd(e){
-  if(_dragId){const c=el('kcard-'+_dragId);if(c)c.style.opacity='1';}
+  if(_dragId){const c=el('kcard-'+_dragId);if(c)c.classList.remove('dragging');}
   document.querySelectorAll('.kanban-col').forEach(c=>c.classList.remove('drag-over'));
   _dragId=null;_dragCol=null;
 }
 function kanbanDrop(e,targetColId){
-  e.preventDefault();
+  e.preventDefault();e.stopPropagation();
   const col=el('kcol-'+targetColId);if(col)col.classList.remove('drag-over');
-  if(!_dragId||_dragCol===targetColId)return;
+  const postId=e.dataTransfer.getData('text/plain')||_dragId;
+  if(!postId)return;
+  if(_dragCol===targetColId)return;
   const targetCol=APP.kanbanCols.find(c=>c.id===targetColId);
   if(!targetCol)return;
   const newStatus=targetCol.status||targetColId;
-  LOCAL.update('posts',_dragId,{status:newStatus});
-  DB.update('posts',_dragId,{status:newStatus});
+  const post=LOCAL.find('posts',postId);
+  LOCAL.update('posts',postId,{status:newStatus});
+  DB.update('posts',postId,{status:newStatus});
   updateBadges();
-  // Sound feedback
-  try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=600;g.gain.setValueAtTime(.3,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.15);o.start();o.stop(ctx.currentTime+.15);}catch{}
-  toast(`✅ "${LOCAL.find('posts',_dragId)?.title||''}" movido para ${targetCol.label}`,'success');
-  renderKanban();
+  // Som de click
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator();const g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.type='sine';o.frequency.value=800;
+    g.gain.setValueAtTime(0.2,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);
+    o.start(ctx.currentTime);o.stop(ctx.currentTime+0.12);
+  }catch(err){}
+  toast(`✅ "${post?.title||''}" → ${targetCol.label}`,'success');
+  setTimeout(()=>renderKanban(),100);
 }
 
 function editKanbanColLabel(colId){
@@ -410,7 +424,7 @@ function renderAgendList(posts){
   </tr>`).join('');
 }
 
-// ── CALENDÁRIO com thumbnails + clique p/ editar ──────────────
+// ── CALENDÁRIO — estilo Hootsuite com thumbnails ──────────────
 let _calYear=null, _calMonth=null;
 
 function renderCalendar(cid,posts,yr,mo){
@@ -426,59 +440,97 @@ function renderCalendar(cid,posts,yr,mo){
 
   // Month dropdown
   const monthDropdown=`<div style="position:relative;display:inline-block;">
-    <button class="btn btn-secondary btn-sm" onclick="toggleMonthDropdown('${cid}',${Y})" style="font-weight:700;min-width:160px;justify-content:center;">
-      ${MN[M]} ${Y} ▾
+    <button class="btn btn-secondary" onclick="toggleMonthDropdown('${cid}')" style="font-weight:700;min-width:170px;justify-content:center;gap:6px;font-size:14px;">
+      📅 ${MN[M]} ${Y} <span style="opacity:.6;">▾</span>
     </button>
-    <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);z-index:100;min-width:180px;padding:6px;margin-top:4px;">
-      ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}',${Y})" style="padding:8px 14px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:${i===M?'700':'500'};color:${i===M?'var(--primary)':'var(--text2)'};background:${i===M?'var(--primary-light)':'transparent'};" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='${i===M?'var(--primary-light)':'transparent'}'">
-        ${mn} ${Y}
-      </div>`).join('')}
+    <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:200;width:220px;padding:8px;max-height:320px;overflow-y:auto;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+        ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}')" style="padding:8px 10px;cursor:pointer;border-radius:8px;font-size:12px;font-weight:${i===M?'800':'500'};color:${i===M?'#fff':'var(--text2)'};background:${i===M?'var(--primary)':'transparent'};text-align:center;transition:all .15s;" onmouseover="if(${i}!==${M})this.style.background='var(--surface2)'" onmouseout="if(${i}!==${M})this.style.background='transparent'">${mn}</div>`).join('')}
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;padding:8px 4px 0;">
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y-1},${M});toggleMonthDropdown('${cid}')" class="btn btn-sm btn-secondary" style="font-size:11px;">← ${Y-1}</button>
+        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y+1},${M});toggleMonthDropdown('${cid}')" class="btn btn-sm btn-secondary" style="font-size:11px;">${Y+1} →</button>
+      </div>
     </div>
   </div>`;
 
-  let h=`<div class="calendar-wrap">
-    <div class="cal-header">
-      <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})">‹</button>
-      ${monthDropdown}
-      <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})">›</button>
+  let h=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})" style="width:32px;height:32px;padding:0;justify-content:center;">‹</button>
+        ${monthDropdown}
+        <button class="btn btn-secondary btn-sm" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})" style="width:32px;height:32px;padding:0;justify-content:center;">›</button>
+      </div>
+      <button class="btn btn-sm btn-secondary" onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()})">Hoje</button>
     </div>
-    <div class="cal-grid">${DN.map(d=>`<div class="cal-day-name">${d}</div>`).join('')}`;
+    <!-- Dias da semana -->
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface2);border-bottom:1px solid var(--border);">
+      ${DN.map(d=>`<div style="padding:10px 8px;text-align:center;font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;">${d}</div>`).join('')}
+    </div>
+    <!-- Grid de dias -->
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);">`;
 
-  for(let i=0;i<fd;i++)h+=`<div class="cal-day other-month"></div>`;
+  for(let i=0;i<fd;i++) h+=`<div style="min-height:110px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface2);opacity:.4;"></div>`;
+
   for(let d=1;d<=dim;d++){
     const isT=d===td&&M===tm&&Y===ty;
     const ds=`${Y}-${String(M+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dp=posts.filter(p=>p.date===ds);
-    h+=`<div class="cal-day${isT?' today':''}" onclick="calClick('${cid}','${ds}')">
-      <div class="cal-day-num">${d}</div>
-      ${dp.map(p=>{
-        const pUrl=getFileUrl(p);
-        const thumb=pUrl&&!isVideo(p)
-          ?`<div onclick="event.stopPropagation();openCalendarPostEdit('${p.id}')" style="width:100%;height:40px;background-image:url('${pUrl}');background-size:cover;background-position:center;border-radius:4px;cursor:pointer;position:relative;" title="${esc(p.title)}"><div style="position:absolute;inset:0;background:rgba(0,0,0,.2);border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'"><span style="font-size:10px;color:#fff;font-weight:700;">✏️</span></div></div>`
-          :`<div class="cal-event ${p.status==='approved'?'green':p.status==='rejected'?'red':''}" onclick="event.stopPropagation();openCalendarPostEdit('${p.id}')" title="${esc(p.title)}" style="cursor:pointer;">${esc(p.title.slice(0,12))}${p.title.length>12?'..':''}</div>`;
-        return thumb;
-      }).join('')}
+    const dayBg=isT?'var(--primary-light)':'var(--surface)';
+    const dayBorder=isT?'2px solid var(--primary)':'1px solid var(--border)';
+
+    h+=`<div style="min-height:110px;border-right:${dayBorder};border-bottom:${dayBorder};background:${dayBg};cursor:pointer;transition:background .15s;vertical-align:top;padding:0;" onclick="calClick('${cid}','${ds}')" onmouseover="if(!this.dataset.today)this.style.background='var(--surface2)'" onmouseout="if(!this.dataset.today)this.style.background='${dayBg}'" ${isT?'data-today="1"':''}>
+      <!-- Número do dia -->
+      <div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:${isT?'800':'500'};color:${isT?'#fff':'var(--text2)'};background:${isT?'var(--primary)':'transparent'};border-radius:50%;">${d}</span>
+        ${dp.length>0?`<span style="font-size:9px;font-weight:700;color:var(--text3);">${dp.length} post${dp.length>1?'s':''}</span>`:''}
+      </div>
+      <!-- Posts do dia -->
+      <div style="padding:0 4px 4px;display:flex;flex-direction:column;gap:3px;">
+        ${dp.slice(0,2).map(p=>{
+          const pUrl=getFileUrl(p);
+          const statusColor=p.status==='approved'?'#16A34A':p.status==='rejected'?'#DC2626':p.status==='pending'?'#D97706':'#64748B';
+          return `<div onclick="event.stopPropagation();openPostDetail('${p.id}')" style="cursor:pointer;border-radius:6px;overflow:hidden;border:1.5px solid ${statusColor};background:#fff;transition:transform .15s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+            ${pUrl&&!isVideo(p)
+              ?`<img src="${pUrl}" style="width:100%;height:52px;object-fit:cover;display:block;" loading="lazy"/>`
+              :isVideo(p)
+                ?`<div style="height:52px;background:#000;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`
+                :`<div style="height:52px;background:linear-gradient(135deg,${statusColor}22,${statusColor}11);display:flex;align-items:center;justify-content:center;font-size:20px;">${p.thumb||'📷'}</div>`
+            }
+            <div style="padding:3px 5px;background:#fff;">
+              <div style="display:flex;align-items:center;gap:3px;">
+                <span class="si ${PSI[p.platform]||''}" style="width:12px;height:12px;font-size:5px;border-radius:3px;">${PSH[p.platform]||'?'}</span>
+                <span style="font-size:9px;font-weight:600;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(p.title)}</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${dp.length>2?`<div style="font-size:9px;font-weight:700;color:var(--primary);text-align:center;padding:2px;cursor:pointer;" onclick="event.stopPropagation();toast('${dp.length} posts em ${ds}','info')">+${dp.length-2} mais</div>`:''}
+      </div>
     </div>`;
   }
-  h+=`</div></div>`;c.innerHTML=h;
+  h+=`</div></div>`;
+  c.innerHTML=h;
 }
 
-function toggleMonthDropdown(cid,yr){
-  const dd=el('month-dropdown-'+cid);
-  if(!dd)return;
-  if(dd.style.display==='none'){
-    dd.style.display='block';
-    // Close on outside click
-    setTimeout(()=>document.addEventListener('click',function close(e){if(!dd.contains(e.target)){dd.style.display='none';document.removeEventListener('click',close);}},),0);
-  } else {
-    dd.style.display='none';
+function toggleMonthDropdown(cid){
+  const dd=el('month-dropdown-'+cid);if(!dd)return;
+  const isOpen=dd.style.display!=='none';
+  dd.style.display=isOpen?'none':'block';
+  if(!isOpen){
+    setTimeout(()=>{
+      const close=(e)=>{
+        if(!dd.contains(e.target)&&!e.target.closest(`[onclick*="toggleMonthDropdown"]`)){
+          dd.style.display='none';document.removeEventListener('click',close);
+        }
+      };
+      document.addEventListener('click',close);
+    },100);
   }
 }
 
-function openCalendarPostEdit(id){
-  // Open editor directly — save returns to calendar view
-  openPostEditor(id);
-}
+function openCalendarPostEdit(id){openPostEditor(id);}
 
 function calClick(cid,ds){
   if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}
@@ -692,16 +744,19 @@ function setupApprovalPage(){
   const id=new URLSearchParams(window.location.search).get('approval');
   if(!id)return;
 
-  // Esconde login e app IMEDIATAMENTE, antes do DOMContentLoaded
   const hideAll=()=>{
-    document.querySelectorAll('#loginPage,#app').forEach(e=>{if(e)e.style.display='none';});
+    const lp=el('loginPage');if(lp)lp.style.display='none';
+    const ap2=el('app');if(ap2)ap2.style.display='none';
     const ap=el('approvalPage');if(ap)ap.style.display='block';
   };
 
+  // Executa imediatamente se DOM já carregou, senão aguarda
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});
   } else {
-    hideAll();loadApprovalPost(id);
+    // DOM já carregado — executa diretamente
+    hideAll();
+    loadApprovalPost(id);
   }
 }
 
@@ -759,8 +814,28 @@ async function loadApprovalPost(id){
   // Preenche selector de workflow
   const wfSel=el('ap-workflow-select');
   if(wfSel){
-    wfSel.innerHTML=`<option value="">— Selecionar workflow —</option>`+
+    wfSel.innerHTML=`<option value="">— Selecionar coluna —</option>`+
       APP.kanbanCols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
+  }
+
+  // Preenche comentário anterior do cliente
+  if(p.clientComment){
+    const ce=el('ap-comment');
+    if(ce){ce.value=p.clientComment;}
+  }
+
+  // Mostra histórico da última ação
+  const prevDiv=el('ap-prev-action');
+  if(prevDiv){
+    if(p.reviewAction&&p.reviewedAt){
+      const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
+      prevDiv.style.display='block';
+      prevDiv.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--text3);">Última ação: <strong>${msgs[p.reviewAction]||p.reviewAction}</strong> em ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`;
+      // Desabilita botões se já foi revisado
+      document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
+    } else {
+      prevDiv.style.display='none';
+    }
   }
 
   if(p.status!=='pending'&&p.status!=='draft'){showApprovalResult(p.status);}
@@ -782,7 +857,7 @@ function showApprovalResult(status){
 }
 
 async function approvalAction(action){
-  const id=window._approvalId;if(!id)return;
+  const id=window._approvalId;if(!id){toast('Erro: ID não encontrado','error');return;}
   const ns={approve:'approved',reject:'rejected',correct:'pending'}[action];
   const comment=v('ap-comment')||'';
 
@@ -792,29 +867,70 @@ async function approvalAction(action){
   const targetCol=workflowId?APP.kanbanCols.find(c=>c.id===workflowId):null;
   const finalStatus=targetCol?(targetCol.status||targetCol.id):ns;
 
-  const updateData={status:finalStatus,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action,clientWorkflow:workflowId};
-  LOCAL.update('posts',id,updateData);
-  await DB.update('posts',id,updateData);
+  const updateData={
+    status:finalStatus,
+    clientComment:comment,
+    reviewedAt:new Date().toISOString(),
+    reviewAction:action,
+    clientWorkflow:workflowId
+  };
 
+  // Salva localmente primeiro (imediato)
+  LOCAL.update('posts',id,updateData);
+
+  // Salva no Firebase
+  try{
+    await DB.update('posts',id,updateData);
+    toast({
+      approve:'✅ Aprovado e salvo! O time foi notificado.',
+      reject:'❌ Rejeitado e salvo. O time foi notificado.',
+      correct:'⚠️ Correção solicitada e salva.'
+    }[action]||'Registrado!', action==='approve'?'success':action==='reject'?'error':'warning');
+  }catch(err){
+    toast('⚠️ Salvo localmente. Verifique conexão.','warning');
+  }
+
+  // Atualiza UI
   const stEl=el('ap-status');
-  if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção';}
+  if(stEl){
+    stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');
+    stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';
+  }
   showApprovalResult(finalStatus);
-  toast({approve:'✅ Aprovado! O time foi notificado.',reject:'❌ Rejeitado. O time foi notificado.',correct:'⚠️ Correção solicitada.'}[action]||'Registrado!',action==='approve'?'success':action==='reject'?'error':'warning');
+
+  // Mostra histórico
+  const prevDiv=el('ap-prev-action');
+  if(prevDiv){
+    const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
+    prevDiv.style.display='block';
+    prevDiv.innerHTML=`<div style="font-size:12px;font-weight:600;color:var(--text3);">Última ação: <strong>${msgs[action]}</strong> em ${new Date().toLocaleString('pt-BR')}</div>`;
+  }
+
   document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
 }
 
 async function saveApprovalComment(){
-  const id=window._approvalId;if(!id)return;
+  const id=window._approvalId;if(!id){toast('Erro: ID não encontrado','error');return;}
   const comment=v('ap-comment')||'';
   if(!comment.trim()){toast('Digite um comentário.','warning');return;}
-  // Save workflow selection too
   const wfSel=el('ap-workflow-select');
   const workflowId=wfSel?wfSel.value:'';
   const updateData={clientComment:comment,commentSavedAt:new Date().toISOString()};
-  if(workflowId){const col=APP.kanbanCols.find(c=>c.id===workflowId);if(col)updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}
+  if(workflowId){
+    const col=APP.kanbanCols.find(c=>c.id===workflowId);
+    if(col){updateData.status=col.status||col.id;updateData.clientWorkflow=workflowId;}
+  }
+  // Salva local + Firebase
   LOCAL.update('posts',id,updateData);
-  await DB.update('posts',id,updateData);
-  toast('💬 Comentário salvo e enviado ao time!','success');
+  try{
+    await DB.update('posts',id,updateData);
+    toast('💬 Comentário salvo com sucesso!','success');
+  }catch(err){
+    toast('⚠️ Salvo localmente. Verifique conexão.','warning');
+  }
+  // Feedback visual no botão
+  const btn=event?.target;
+  if(btn){const orig=btn.textContent;btn.textContent='✅ Salvo!';btn.style.background='var(--green)';btn.style.color='#fff';setTimeout(()=>{btn.textContent=orig;btn.style.background='';btn.style.color='';},2000);}
 }
 
 // ── Contas ────────────────────────────────────────────────────
