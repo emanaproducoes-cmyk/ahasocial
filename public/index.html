@@ -477,9 +477,9 @@
             onclick="triggerFile('ag-file-input')">
             <div class="upload-zone-icon">☁️</div>
             <div class="upload-zone-text">Arraste ou clique para selecionar</div>
-            <div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB (imagem) / 50MB (vídeo)</div>
+            <div class="upload-zone-sub">PNG, JPG, MP4, MOV — máx. 15MB imagem / 100MB vídeo</div>
           </div>
-          <input type="file" id="ag-file-input" accept="image/*,video/*" style="display:none;" onchange="onFileChange('ag-file-input','ag-file-preview','ag-file-data')"/>
+          <input type="file" id="ag-file-input" accept="image/*,video/*,video/mp4,video/mov,video/avi,video/webm" style="display:none;" onchange="onFileChange('ag-file-input','ag-file-preview','ag-file-data')"/>
           <input type="hidden" id="ag-file-data"/>
         </div>
       </div>
