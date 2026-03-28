@@ -1,5 +1,5 @@
-// AHA Social Planning — app.js v3.2 — CORRIGIDO
-const APP = { user:null, currentPage:'dashboard', charts:{}, editingId:null, unsubs:[] };
+// AHA Social Planning — app.js v3.3
+const APP = { user:null, currentPage:'dashboard', charts:{}, editingId:null, unsubs:[], agendView:'lista' };
 
 const PL  = {ig:'Instagram',fb:'Facebook',yt:'YouTube',tt:'TikTok',li:'LinkedIn',tw:'Twitter/X'};
 const PSI = {ig:'si-ig',fb:'si-fb',yt:'si-yt',tt:'si-tt',li:'si-li'};
@@ -27,7 +27,7 @@ async function doLogin(){
   if(!email){toast('Informe seu e-mail.','warning');return;}
   if(!pass||pass.length<6){toast('Senha com 6+ caracteres.','warning');return;}
   if(_firebaseReady){const u=await AUTH.loginEmail(email,pass);if(!u){toast('E-mail ou senha incorretos.','error');return;}}
-  else{const name=email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());APP.user={email,name,avatar:name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),role:'Gerente de Conteúdo'};localStorage.setItem('aha_user',JSON.stringify(APP.user));toast('Bem-vindo! (modo local)','warning');showApp();}
+  else{const name=email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());APP.user={email,name,avatar:name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),role:'Gerente de Conteúdo'};localStorage.setItem('aha_user',JSON.stringify(APP.user));toast('Bem-vindo!','warning');showApp();}
 }
 async function doGoogleLogin(){
   if(_firebaseReady){const u=await AUTH.loginGoogle();if(!u)toast('Erro no Google login.','error');}
@@ -47,7 +47,7 @@ function showApp(){
   if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
   if(!LOCAL.get('posts').length)seed();
   startListeners();initApp();
-  setInterval(()=>{updateBadges();},5000);
+  setInterval(()=>updateBadges(),5000);
 }
 
 function seed(){
@@ -65,7 +65,7 @@ function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
   APP.unsubs.push(DB.listen('posts',posts=>{LOCAL.set('posts',posts);updateBadges();if(['posts','analise','aprovados','rejeitados','agendamentos','dashboard'].includes(APP.currentPage))renderPage(APP.currentPage);}));
   APP.unsubs.push(DB.listen('accounts',accounts=>{LOCAL.set('accounts',accounts);updateBadges();if(APP.currentPage==='contas')renderContas();}));
-  APP.unsubs.push(DB.listen('campaigns',camps=>{LOCAL.set('campaigns',camps);if(APP.currentPage==='campanhas')renderCampanhas();}));
+  APP.unsubs.push(DB.listen('campaigns',camps=>{LOCAL.set('camps',camps);if(APP.currentPage==='campanhas')renderCampanhas();}));
 }
 
 function showPage(page,btn){
@@ -92,6 +92,7 @@ function updateBadges(){
   setSafe('badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
 }
 
+// ── Thumbnails ────────────────────────────────────────────────
 function getFileUrl(p){if(!p)return null;if(p.fileUrl&&p.fileUrl.length>5)return p.fileUrl;return null;}
 function isVideo(p){return p.fileType==='video'||(p.fileUrl&&p.fileUrl.startsWith('data:video'));}
 function thumbBg(p){
@@ -110,6 +111,7 @@ function thumbFull(p){
   return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:var(--surface2);border-radius:var(--radius);">${p.thumb||'📷'}</div>`;
 }
 
+// ── Dashboard ─────────────────────────────────────────────────
 function renderDashboard(){
   const posts=LOCAL.get('posts');
   setText('kpi-total',posts.length);setText('kpi-approved',posts.filter(p=>p.status==='approved').length);
@@ -133,6 +135,7 @@ function initCharts(){
 }
 function mkC(id,type,data,options={}){const c=el(id);if(!c)return;APP.charts[id]=new Chart(c,{type,data,options:{responsive:true,maintainAspectRatio:false,...options}});}
 
+// ── Grid de posts ─────────────────────────────────────────────
 function renderGrid(cid,posts){const g=el(cid);if(!g)return;if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}g.innerHTML=posts.map(p=>postCard(p)).join('');}
 function postCard(p){
   return`<div class="post-card" onclick="openPostDetail('${p.id}')">
@@ -160,22 +163,50 @@ function openPostDetail(id){
   openModal('modalPostDetail');
 }
 
-let _agendView='lista';
-function renderAgendamentos(){setAgendView(_agendView,null,true);}
-function setAgendView(view,btn,silent){
-  _agendView=view;
-  if(!silent&&btn){btn.closest('.view-toggle').querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+// ── AGENDAMENTOS — corrigido ──────────────────────────────────
+function renderAgendamentos(){
+  // Sincroniza botões de view com estado atual
+  document.querySelectorAll('.vt-btn').forEach(b=>b.classList.remove('active'));
+  const activeBtn=document.querySelector(`.vt-btn[onclick*="'${APP.agendView}'"]`);
+  if(activeBtn)activeBtn.classList.add('active');
+  applyAgendView(APP.agendView);
+}
+
+function setAgendView(view,btn){
+  APP.agendView=view;
+  document.querySelectorAll('.view-toggle .vt-btn').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  applyAgendView(view);
+}
+
+function applyAgendView(view){
   ['lista','grade','calendario'].forEach(vi=>{const e2=el('agend-'+vi);if(e2)e2.style.display=vi===view?'block':'none';});
   const posts=LOCAL.get('posts');
   if(view==='lista')renderAgendList(posts);
   if(view==='grade'){const g=el('agend-cards');if(g)g.innerHTML=posts.length?posts.map(p=>postCard(p)).join(''):emptyS('📅','Sem posts','Crie um agendamento.');}
   if(view==='calendario')renderCalendar('agend-cal',posts);
 }
+
+// LISTA — corrigido para mostrar todos os posts
 function renderAgendList(posts){
   const tbody=el('agend-list');if(!tbody)return;
-  tbody.innerHTML=posts.map(p=>`<tr onclick="openPostDetail('${p.id}')" style="cursor:pointer;"><td style="display:flex;align-items:center;gap:10px;min-width:0;">${thumbInline(p,40)}<span class="td-primary" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.title)}</span></td><td><span class="badge ${SB[p.status]||'badge-gray'}">${SL[p.status]||p.status}</span></td><td><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></td><td class="td-mono">${p.date||'—'}</td><td>${p.campaign?esc(p.campaign):'—'}</td><td onclick="event.stopPropagation();" style="white-space:nowrap;"><button class="btn btn-xs btn-primary" onclick="openShareModal('${p.id}')">📤</button><button class="btn btn-xs btn-secondary" onclick="openPostEditor('${p.id}')" style="margin-left:3px;">✏️</button><button class="btn btn-xs btn-danger" onclick="doDeletePost('${p.id}')" style="margin-left:3px;">🗑️</button></td></tr>`).join('')||`<tr><td colspan="6">${emptyS('📅','Nenhum agendamento','Clique em "+ Novo Agendamento".')}</td></tr>`;
+  if(!posts.length){tbody.innerHTML=`<tr><td colspan="6">${emptyS('📅','Nenhum agendamento','Clique em "+ Novo Agendamento".')}</td></tr>`;return;}
+  tbody.innerHTML=posts.map(p=>`
+  <tr onclick="openPostDetail('${p.id}')" style="cursor:pointer;">
+    <td style="display:flex;align-items:center;gap:10px;min-width:0;">${thumbInline(p,40)}<span class="td-primary" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.title)}</span></td>
+    <td><span class="badge ${SB[p.status]||'badge-gray'}">${SL[p.status]||p.status}</span></td>
+    <td><span class="si ${PSI[p.platform]||''}" style="width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span></td>
+    <td class="td-mono">${p.date||'—'}</td>
+    <td>${p.campaign?esc(p.campaign):'—'}</td>
+    <td onclick="event.stopPropagation();" style="white-space:nowrap;">
+      <button class="btn btn-xs btn-primary" onclick="openShareModal('${p.id}')">📤</button>
+      <button class="btn btn-xs btn-secondary" onclick="openPostEditor('${p.id}')" style="margin-left:3px;">✏️</button>
+      <button class="btn btn-xs btn-danger" onclick="doDeletePost('${p.id}')" style="margin-left:3px;">🗑️</button>
+    </td>
+  </tr>`).join('');
 }
 
+// ── Calendário ────────────────────────────────────────────────
 function renderCalendar(cid,posts,yr,mo){
   const c=el(cid);if(!c)return;
   const now=new Date(),Y=yr??now.getFullYear(),M=mo??now.getMonth();
@@ -195,6 +226,7 @@ function renderCalendar(cid,posts,yr,mo){
 }
 function calClick(cid,ds){if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}}
 
+// ── Upload ────────────────────────────────────────────────────
 function triggerFile(inputId){el(inputId)?.click();}
 function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
@@ -227,45 +259,138 @@ function videoThumbnail(file){
   });
 }
 
+// ── NOVO AGENDAMENTO ──────────────────────────────────────────
 function openNewAgendamento(){
   APP.editingId=null;
-  ['ag-title','ag-date','ag-campaign','ag-caption','ag-tags'].forEach(id=>sv(id,''));
-  sv('ag-platform','ig');sv('ag-status','pending');
-  const prev=el('ag-file-preview');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
-  sv('ag-file-data','');resetTipoBtns();setText('modalAgendTitulo','📅 Novo Agendamento');openModal('modalAgendamento');
+  ['ag-title','ag-date','ag-caption','ag-tags'].forEach(id=>sv(id,''));
+  sv('ag-platform','ig');sv('ag-status','pending');sv('ag-campaign','');
+  const prev=el('ag-file-preview');
+  if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para selecionar</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
+  sv('ag-file-data','');
+  resetTipoBtns();
+  setText('modalAgendTitulo','📅 Novo Agendamento');
+  openModal('modalAgendamento');
 }
+
+// ── EDITAR — corrigido: preenche TODOS os campos corretamente ─
 function openPostEditor(id){
-  const p=LOCAL.find('posts',id);if(!p)return;
+  const p=LOCAL.find('posts',id);
+  if(!p){toast('Post não encontrado.','error');return;}
   APP.editingId=id;
-  sv('ag-title',p.title||'');sv('ag-platform',p.platform||'ig');sv('ag-date',p.date||'');sv('ag-campaign',p.campaign||'');sv('ag-caption',p.caption||'');sv('ag-tags',p.tags||'');sv('ag-status',p.status||'pending');
-  document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';if(b.dataset.tipo===p.type){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
-  const prev=el('ag-file-preview'),url=getFileUrl(p);
-  if(url&&prev){if(isVideo(p))prev.innerHTML=`<div style="position:relative;height:160px;background:#000;border-radius:var(--radius);overflow:hidden;"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;">▶️</div></div>`;else prev.innerHTML=`<img src="${url}" style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;sv('ag-file-data',p.fileUrl||'');}
-  else if(prev){prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;sv('ag-file-data','');}
-  setText('modalAgendTitulo','✏️ Editar Post');closeModal('modalPostDetail');openModal('modalAgendamento');
+
+  // Preenche todos os campos
+  sv('ag-title', p.title||'');
+  sv('ag-platform', p.platform||'ig');
+  sv('ag-date', p.date||'');
+  sv('ag-campaign', p.campaign||'');
+  sv('ag-caption', p.caption||'');
+  sv('ag-tags', p.tags||'');
+  sv('ag-status', p.status||'pending');
+
+  // Tipo de conteúdo
+  document.querySelectorAll('.tipo-btn').forEach(b=>{
+    b.classList.remove('active');b.style.cssText='';
+    if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
+  });
+
+  // Preview do arquivo existente
+  const prev=el('ag-file-preview');
+  const url=getFileUrl(p);
+  if(url&&prev){
+    if(isVideo(p))prev.innerHTML=`<div style="position:relative;height:160px;background:#000;border-radius:var(--radius);overflow:hidden;display:flex;align-items:center;justify-content:center;"><div style="font-size:48px;">▶️</div><div style="position:absolute;bottom:6px;left:0;right:0;text-align:center;color:#fff;font-size:11px;">Vídeo carregado</div></div>`;
+    else prev.innerHTML=`<img src="${url}" style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius);display:block;" onerror="this.parentNode.innerHTML='<div style=\\'height:160px;display:flex;align-items:center;justify-content:center;font-size:40px;\\'>${p.thumb||'📷'}</div>'"/>`;
+    sv('ag-file-data', p.fileUrl||'');
+  } else if(prev){
+    prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arraste ou clique para substituir</div><div class="upload-zone-sub">PNG, JPG, MP4 — máx. 15MB</div>`;
+    sv('ag-file-data','');
+  }
+
+  setText('modalAgendTitulo','✏️ Editar Post');
+  closeModal('modalPostDetail');
+  openModal('modalAgendamento');
 }
-function resetTipoBtns(){document.querySelectorAll('.tipo-btn').forEach((b,i)=>{b.classList.remove('active');b.style.cssText='';if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});}
+
+function resetTipoBtns(){
+  document.querySelectorAll('.tipo-btn').forEach((b,i)=>{
+    b.classList.remove('active');b.style.cssText='';
+    if(i===0){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
+  });
+}
 function selectTipo(btn){document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';});btn.classList.add('active');btn.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}
 
+// ── SALVAR — corrigido: persiste TODOS os dados ───────────────
 async function saveAgendamento(){
-  const title=v('ag-title')?.trim(),platform=v('ag-platform');
-  if(!title){toast('Informe o título. ⚠️','warning');return;}if(!platform){toast('Selecione a plataforma.','warning');return;}
+  const title=v('ag-title')?.trim();
+  const platform=v('ag-platform');
+  if(!title){toast('Informe o título. ⚠️','warning');return;}
+  if(!platform){toast('Selecione a plataforma.','warning');return;}
+
   const tipo=document.querySelector('.tipo-btn.active')?.dataset.tipo||'image';
-  const fileRaw=v('ag-file-data');let fileUrl=null,fileType='image';
-  if(fileRaw){if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}}
-  const data={title,platform,date:v('ag-date'),campaign:v('ag-campaign')?.trim()||'',caption:v('ag-caption')?.trim()||'',tags:v('ag-tags')?.trim()||'',status:v('ag-status')||'pending',type:tipo,fileUrl,fileType,thumb:fileUrl?null:(TEMO[tipo]||'📸')};
+  const fileRaw=v('ag-file-data');
+  let fileUrl=null,fileType='image';
+  if(fileRaw){
+    if(fileRaw.startsWith('{')){try{const fd=JSON.parse(fileRaw);fileUrl=fd.thumb||fd.url;fileType=fd.type||'image';}catch{fileUrl=fileRaw;}}
+    else if(fileRaw.startsWith('data:')||fileRaw.startsWith('http')){fileUrl=fileRaw;fileType=fileRaw.startsWith('data:video')?'video':'image';}
+  }
+
+  // Se está editando, mantém o fileUrl original se não fez novo upload
+  if(APP.editingId && !fileRaw){
+    const original=LOCAL.find('posts',APP.editingId);
+    if(original){fileUrl=original.fileUrl;fileType=original.fileType;}
+  }
+
+  const data={
+    title, platform,
+    date:     v('ag-date')||'',
+    campaign: v('ag-campaign')?.trim()||'',
+    caption:  v('ag-caption')?.trim()||'',
+    tags:     v('ag-tags')?.trim()||'',
+    status:   v('ag-status')||'pending',
+    type:     tipo,
+    fileUrl,  fileType,
+    thumb:    fileUrl?null:(TEMO[tipo]||'📸'),
+  };
+
   closeModal('modalAgendamento');
-  if(APP.editingId){LOCAL.update('posts',APP.editingId,data);DB.update('posts',APP.editingId,data);toast('Post atualizado! ✅','success');APP.editingId=null;}
-  else{LOCAL.add('posts',data);DB.add('posts',data);toast('Agendamento criado! 🗓️','success');}
-  updateBadges();renderPage(APP.currentPage);updateCampaignCounts();
+
+  if(APP.editingId){
+    LOCAL.update('posts',APP.editingId,data);
+    DB.update('posts',APP.editingId,data);
+    toast('Post atualizado! ✅','success');
+    APP.editingId=null;
+  } else {
+    LOCAL.add('posts',data);
+    DB.add('posts',data);
+    toast('Agendamento criado! 🗓️','success');
+  }
+
+  updateBadges();
+
+  // Permanece no modo de visualização atual
+  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  else renderPage(APP.currentPage);
+
+  updateCampaignCounts();
 }
+
 async function saveDraft(){const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
-async function doDeletePost(id){const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;LOCAL.remove('posts',id);DB.remove('posts',id);updateBadges();renderPage(APP.currentPage);toast('Post excluído.','info');}
+
+// ── DELETAR — permanece no modo atual ─────────────────────────
+async function doDeletePost(id){
+  const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
+  LOCAL.remove('posts',id);DB.remove('posts',id);
+  updateBadges();toast('Post excluído.','info');
+  // Permanece no modo atual
+  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  else renderPage(APP.currentPage);
+}
 
 function doChangeStatus(id,ns){
   LOCAL.update('posts',id,{status:ns});DB.update('posts',id,{status:ns});
-  updateBadges();renderPage(APP.currentPage);closeModal('modalPostDetail');
+  updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
+  if(APP.currentPage==='agendamentos') applyAgendView(APP.agendView);
+  else renderPage(APP.currentPage);
   updateCampaignCounts();
 }
 function updateCampaignCounts(){
@@ -273,46 +398,124 @@ function updateCampaignCounts(){
   LOCAL.get('campaigns').forEach(c=>{const cp=posts.filter(p=>p.campaign===c.name);const upd={posts:cp.length,approved:cp.filter(p=>p.status==='approved').length,pending:cp.filter(p=>p.status==='pending').length,rejected:cp.filter(p=>p.status==='rejected').length};LOCAL.update('campaigns',c.id,upd);DB.update('campaigns',c.id,upd);});
 }
 
+// ── SHARE — abre nova aba ─────────────────────────────────────
 function openShareModal(id){
   const p=LOCAL.find('posts',id);if(!p)return;
   const link=window.location.origin+window.location.pathname.replace('index.html','')+'?approval='+id;
   sv('share-link-input',link);
-  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Link de aprovação:\n\n*'+p.title+'*\n\n'+link)}`;
-  el('share-email').href=`mailto:?subject=Aprovação — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Acesse:\n\n'+link)}`;
+  el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Segue o link para aprovação do criativo:\n\n*'+p.title+'*\n\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
+  el('share-email').href=`mailto:?subject=Aprovação de Criativo — ${encodeURIComponent(p.title)}&body=${encodeURIComponent('Olá!\n\nPor favor acesse o link abaixo para revisar o criativo:\n\n'+link+'\n\nAguardo seu retorno.\n\nAHA Social Planning')}`;
   openModal('modalShare');
 }
 function copyLink(){const val=v('share-link-input');if(!val)return;navigator.clipboard?.writeText(val).then(()=>toast('Link copiado! 📋','success'));}
-function openApprovalTab(){const link=v('share-link-input');if(link)window.open(link,'_blank');}
+function openApprovalTab(){const link=v('share-link-input');if(link)window.open(link,'_blank','noopener');}
 
+// ── PÁGINA DE APROVAÇÃO — responsiva, persiste, retorna dados ─
 function setupApprovalPage(){
-  const id=new URLSearchParams(window.location.search).get('approval');if(!id)return;
+  const id=new URLSearchParams(window.location.search).get('approval');
+  if(!id)return;
+
   document.addEventListener('DOMContentLoaded',()=>{
-    const lp=el('loginPage'),ap2=el('app'),appEl=el('approvalPage');
-    if(lp)lp.style.display='none';if(ap2)ap2.style.display='none';if(appEl)appEl.style.display='block';
+    // Esconde tudo exceto a página de aprovação
+    document.querySelectorAll('#loginPage,#app').forEach(e=>{if(e)e.style.display='none';});
+    const appEl=el('approvalPage');
+    if(appEl)appEl.style.display='block';
+
     initFirebase();
+
     const loadPost=async()=>{
-      let p=LOCAL.find('posts',id);if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
-      if(!p){if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link expirou ou o post foi removido.</p></div></div>`;return;}
+      let p=LOCAL.find('posts',id);
+      if(!p&&_firebaseReady){try{p=await FS.get('posts',id);}catch{}}
+
+      if(!p){
+        if(appEl)appEl.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(135deg,#FFF7ED,#F8FAFC);"><div style="text-align:center;max-width:400px;background:#fff;border-radius:16px;padding:40px;box-shadow:0 20px 40px rgba(0,0,0,.1);"><div style="font-size:48px;margin-bottom:16px;">😕</div><h2 style="font-size:22px;font-weight:800;color:#0F172A;margin-bottom:8px;">Post não encontrado</h2><p style="color:#64748B;font-size:14px;">Este link pode ter expirado ou o post foi removido.</p></div></div>`;
+        return;
+      }
+
       window._approvalId=id;
+      window._approvalPost=p;
+
+      // Preenche thumbnail
       const thumbEl=el('ap-thumb');
-      if(thumbEl){const url=getFileUrl(p);if(url&&!isVideo(p))thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:360px;object-fit:contain;display:block;"/>`;else if(url&&isVideo(p))thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:360px;display:block;background:#000;"></video>`;else thumbEl.innerHTML=`<div style="font-size:72px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;}
-      setText('ap-title',p.title);setText('ap-platform',PL[p.platform]||p.platform);setText('ap-date',p.date||'—');setText('ap-campaign',p.campaign||'—');setText('ap-caption',p.caption||'Sem legenda.');
-      const stEl=el('ap-status');if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
+      if(thumbEl){
+        const url=getFileUrl(p);
+        if(url&&!isVideo(p))thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;
+        else if(url&&isVideo(p))thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;
+        else thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;
+      }
+
+      setText('ap-title',p.title);
+      setText('ap-platform',PL[p.platform]||p.platform);
+      setText('ap-date',p.date||'—');
+      setText('ap-campaign',p.campaign||'—');
+      setText('ap-caption',p.caption||'Sem legenda.');
+
+      const stEl=el('ap-status');
+      if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
+
+      // Mostra comentário anterior se existir
+      if(p.clientComment){
+        const commentEl=el('ap-comment');
+        if(commentEl)commentEl.value=p.clientComment;
+      }
+
+      // Se já foi revisado, mostra o estado
+      if(p.status!=='pending'&&p.status!=='draft'){
+        showApprovalResult(p.status);
+      }
     };
+
     loadPost();
   });
 }
-async function approvalAction(action){
-  const id=window._approvalId;if(!id)return;
-  const ns={approve:'approved',reject:'rejected',correct:'pending'}[action],comment=v('ap-comment')||'';
-  LOCAL.update('posts',id,{status:ns,clientComment:comment,reviewedAt:new Date().toISOString()});
-  await DB.update('posts',id,{status:ns,clientComment:comment,reviewedAt:new Date().toISOString()});
-  const stEl=el('ap-status');if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';}
-  toast({approve:'✅ Aprovado!',reject:'❌ Rejeitado.',correct:'⚠️ Correção solicitada.'}[action]||'OK',action==='approve'?'success':action==='reject'?'error':'warning');
-  document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
-  const body=document.querySelector('.approval-body');if(body){const conf=document.createElement('div');conf.style.cssText='text-align:center;padding:20px;margin-top:16px;border-radius:10px;background:'+(action==='approve'?'#F0FDF4':action==='reject'?'#FEF2F2':'#FFFBEB')+';';conf.innerHTML=`<div style="font-size:36px;margin-bottom:8px;">${action==='approve'?'✅':action==='reject'?'❌':'⚠️'}</div><div style="font-size:15px;font-weight:700;color:${action==='approve'?'#16A34A':action==='reject'?'#DC2626':'#D97706'};">${action==='approve'?'Aprovado!':action==='reject'?'Rejeitado':'Correção solicitada'}</div><div style="font-size:12px;color:#64748B;margin-top:4px;">Resposta registrada.</div>`;body.appendChild(conf);}
+
+function showApprovalResult(status){
+  const resultDiv=el('ap-result');
+  if(!resultDiv)return;
+  const configs={
+    approved:{bg:'#F0FDF4',color:'#16A34A',icon:'✅',text:'Este criativo foi aprovado!'},
+    rejected:{bg:'#FEF2F2',color:'#DC2626',icon:'❌',text:'Este criativo foi rejeitado.'},
+    pending: {bg:'#FFFBEB',color:'#D97706',icon:'⚠️',text:'Correção solicitada.'},
+  };
+  const cfg=configs[status]||configs.pending;
+  resultDiv.style.cssText=`display:block;text-align:center;padding:20px;margin-top:16px;border-radius:10px;background:${cfg.bg};`;
+  resultDiv.innerHTML=`<div style="font-size:36px;margin-bottom:8px;">${cfg.icon}</div><div style="font-size:15px;font-weight:700;color:${cfg.color};">${cfg.text}</div>`;
 }
 
+async function approvalAction(action){
+  const id=window._approvalId;if(!id)return;
+  const ns={approve:'approved',reject:'rejected',correct:'pending'}[action];
+  const comment=v('ap-comment')||'';
+
+  // Salva localmente e no Firebase
+  const updateData={status:ns,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action};
+  LOCAL.update('posts',id,updateData);
+  await DB.update('posts',id,updateData);
+
+  // Atualiza o badge de status na página
+  const stEl=el('ap-status');
+  if(stEl){stEl.className='badge '+(action==='approve'?'badge-green':action==='reject'?'badge-red':'badge-yellow');stEl.textContent=action==='approve'?'✅ Aprovado':action==='reject'?'❌ Rejeitado':'⚠️ Correção Solicitada';}
+
+  // Mostra resultado visual
+  showApprovalResult(ns);
+
+  // Toast de confirmação
+  toast({approve:'✅ Criativo aprovado! O time foi notificado.',reject:'❌ Criativo rejeitado. O time foi notificado.',correct:'⚠️ Correção solicitada. O time foi notificado.'}[action]||'Resposta registrada!',action==='approve'?'success':action==='reject'?'error':'warning');
+
+  // Desabilita botões de ação mas mantém a página
+  document.querySelectorAll('.approval-actions button').forEach(b=>{b.disabled=true;b.style.opacity='.5';});
+}
+
+async function saveApprovalComment(){
+  const id=window._approvalId;if(!id)return;
+  const comment=v('ap-comment')||'';
+  if(!comment.trim()){toast('Digite um comentário antes de salvar.','warning');return;}
+  LOCAL.update('posts',id,{clientComment:comment,commentSavedAt:new Date().toISOString()});
+  await DB.update('posts',id,{clientComment:comment,commentSavedAt:new Date().toISOString()});
+  toast('💬 Comentário salvo e enviado ao time!','success');
+}
+
+// ── Contas ────────────────────────────────────────────────────
 function renderContas(){
   const accounts=LOCAL.get('accounts'),grid=el('accountsGrid');if(!grid)return;
   if(!accounts.length){grid.innerHTML=emptyS('🔗','Nenhuma conta','Clique em "+ Nova Conta".');return;}
@@ -333,6 +536,7 @@ async function saveAccount(){
   updateBadges();renderContas();
 }
 
+// ── Campanhas ─────────────────────────────────────────────────
 function renderCampanhas(){
   const camps=LOCAL.get('campaigns'),cont=el('campanhas-list');if(!cont)return;
   const SLc={active:'Ativa',paused:'Pausada',ended:'Encerrada'},SBc={active:'badge-green',paused:'badge-yellow',ended:'badge-gray'};
@@ -347,6 +551,7 @@ function doToggleCamp(id,cur){const ns=cur==='active'?'paused':'active';LOCAL.up
 function doDeleteCamp(id){const c=LOCAL.find('campaigns',id);if(!c||!confirm('Excluir "'+c.name+'"?'))return;LOCAL.remove('campaigns',id);DB.remove('campaigns',id);renderCampanhas();toast('Campanha excluída.','info');}
 function exportCampReport(id){const c=LOCAL.find('campaigns',id);if(!c)return;const prog=c.posts?Math.round((c.approved/c.posts)*100):0;const txt=`RELATÓRIO — AHA Social Planning\n${'='.repeat(50)}\nCampanha: ${c.name}\nStatus: ${c.status}\nPeríodo: ${c.start||'—'} → ${c.end||'—'}\nBudget: ${c.budget||'—'}\nPosts: ${c.posts} | Aprovados: ${c.approved} | Pendentes: ${c.pending} | Rejeitados: ${c.rejected}\nTaxa: ${prog}%\n\nGerado: ${new Date().toLocaleString('pt-BR')}\nAHA Social Planning © 2026`;dlText(txt,c.name.replace(/\s+/g,'_')+'_relatorio.txt');toast('Relatório exportado! 📊','success');}
 
+// ── Tráfego ───────────────────────────────────────────────────
 function renderTrafego(){
   ['chartTrafego','chartInvest'].forEach(id=>{if(APP.charts[id]){try{APP.charts[id].destroy();}catch{}delete APP.charts[id];}});
   const tip={enabled:true,backgroundColor:'#0F172A',titleColor:'#fff',bodyColor:'#94A3B8',padding:12,cornerRadius:8};const tc={font:{family:"'DM Sans',sans-serif",size:11},color:'#94A3B8'};
@@ -354,16 +559,20 @@ function renderTrafego(){
   const ci=el('chartInvest');if(ci)APP.charts.chartInvest=new Chart(ci,{type:'doughnut',data:{labels:['Instagram','Facebook','Google','TikTok'],datasets:[{data:[34,23,28,15],backgroundColor:['#F97316','#1877F2','#4285F4','#333'],borderWidth:3,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{font:{family:"'DM Sans',sans-serif",size:11},boxWidth:12,usePointStyle:true}},tooltip:tip}}});
 }
 
+// ── Modals ────────────────────────────────────────────────────
 function openModal(id){const e=el(id);if(e){e.classList.add('open');document.body.style.overflow='hidden';}}
 function closeModal(id){if(id){const e=el(id);if(e)e.classList.remove('open');}else document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));document.body.style.overflow='';APP.editingId=null;}
 
+// ── Toast ─────────────────────────────────────────────────────
 let _tq=[],_tr=false;
 function toast(msg,type='info'){_tq.push({msg,type});if(!_tr)_pTQ();}
 window.showToast=(m,t)=>toast(m,t);
 function _pTQ(){if(!_tq.length){_tr=false;return;}_tr=true;const{msg,type}=_tq.shift(),t=el('toast');if(!t)return;t.querySelector('.toast-icon').textContent={success:'✅',error:'❌',warning:'⚠️',info:'ℹ️'}[type]||'ℹ️';t.querySelector('.toast-title').textContent=msg;t.className='toast show toast-'+type;const ln=t.querySelector('.toast-line');if(ln){ln.style.animation='none';setTimeout(()=>ln.style.animation='',10);}setTimeout(()=>{t.classList.remove('show');setTimeout(_pTQ,300);},3500);}
 
+// ── Extras ────────────────────────────────────────────────────
 function exportPostsCSV(){const ps=LOCAL.get('posts');if(!ps.length){toast('Nenhum post.','warning');return;}const h='Título,Plataforma,Status,Data,Campanha,Tipo';const rows=ps.map(p=>[p.title,p.platform,p.status,p.date,p.campaign,p.type].map(x=>'"'+(x||'').replace(/"/g,'""')+'"').join(','));const csv=[h,...rows].join('\n');const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='aha_posts.csv';a.click();toast('CSV exportado! 📥','success');}
 
+// ── Utils ─────────────────────────────────────────────────────
 const el=(id)=>document.getElementById(id);
 const setText=(id,val)=>{const e=el(id);if(e)e.textContent=val;};
 const setSafe=(id,val)=>{const e=el(id);if(e)e.textContent=val;};
