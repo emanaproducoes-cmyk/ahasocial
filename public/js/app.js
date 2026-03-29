@@ -3,6 +3,7 @@ const APP = {
   user:null,
   currentPage: localStorage.getItem('aha_page')||'dashboard',
   charts:{}, editingId:null, unsubs:[], agendView:'lista',
+  selection: new Set(), // IDs of selected posts
   kanbanCols: (()=>{
     const COLS_V='v5';
     const DEFAULT=[
@@ -69,14 +70,25 @@ function doLogout(){
   localStorage.removeItem('aha_user');
   localStorage.removeItem('aha_page');
   APP.user=null;
+  APP._appShown=false;
+  APP._saving=false;
   const _lp=el('loginPage');if(_lp){_lp.classList.add('visible');_lp.style.display='flex';}
   const _ap=el('app');if(_ap){_ap.classList.remove('visible');_ap.style.display='none';}
   try{AUTH.logout();}catch{}
 }
 
 function showApp(){
+  // Guard: if already showing app, only refresh user avatar (avoid double init)
+  const appEl=el('app');
+  if(appEl&&appEl.classList.contains('visible')&&APP._appShown){
+    // Just update avatar in case auth refreshed
+    const u2=APP.user;
+    setText('topAvatar',u2.avatar||'U');setText('sideAvatar',u2.avatar||'U');setText('sideUserName',u2.name||'Usuário');
+    return;
+  }
+  APP._appShown=true;
   const _lp2=el('loginPage');if(_lp2){_lp2.classList.remove('visible');_lp2.style.display='none';}
-  const appEl=el('app');if(appEl){appEl.classList.add('visible');appEl.style.display='block';}
+  if(appEl){appEl.classList.add('visible');appEl.style.display='block';}
   const u=APP.user;
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
@@ -252,17 +264,35 @@ function initCharts(){
 function mkC(id,type,data,options={}){const c=el(id);if(!c)return;APP.charts[id]=new Chart(c,{type,data,options:{responsive:true,maintainAspectRatio:false,...options}});}
 
 // ── Grid de posts ─────────────────────────────────────────────
-function renderGrid(cid,posts){const g=el(cid);if(!g)return;if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}g.innerHTML=posts.map(p=>postCard(p)).join('');}
+function renderGrid(cid,posts){
+  const g=el(cid);if(!g)return;
+  if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}
+  // Selection toolbar
+  const hasSel=APP.selection.size>0;
+  const toolbar=hasSel?`<div id="sel-toolbar" style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--primary-light);border:1px solid var(--primary-border);border-radius:var(--radius);margin-bottom:12px;flex-wrap:wrap;">
+    <span style="font-size:13px;font-weight:700;color:var(--primary);">✓ ${APP.selection.size} selecionado${APP.selection.size>1?'s':''}</span>
+    <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;">
+      <button class="btn btn-sm btn-secondary" onclick="selChangeStatus('approved')">✅ Aprovar todos</button>
+      <button class="btn btn-sm btn-secondary" onclick="selChangeStatus('pending')">⏳ Em análise</button>
+      <button class="btn btn-sm btn-secondary" onclick="selChangeStatus('rejected')">❌ Rejeitar todos</button>
+      <button class="btn btn-sm btn-danger" onclick="selDeleteAll()">🗑️ Excluir selecionados</button>
+      <button class="btn btn-sm btn-ghost" onclick="selClear();renderPage(APP.currentPage)">✕ Limpar seleção</button>
+    </div>
+  </div>`:'';
+  g.innerHTML=toolbar+'<div class="cards-grid">'+posts.map(p=>postCard(p)).join('')+'</div>';
+}
 function postCard(p){
-  // FIX II: show client comment badge on card
   const hasComment=p.clientComment&&p.clientComment.trim().length>0;
-  return`<div class="post-card" onclick="openPostDetail('${p.id}')">
+  const isSel=APP.selection.has(p.id);
+  return`<div class="post-card${isSel?' post-card-selected':''}" onclick="postCardClick(event,'${p.id}')">
     <div class="post-card-thumb">
       ${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
-      <span class="si ${PSI[p.platform]||''}" style="position:absolute;top:8px;left:8px;z-index:2;width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span>
-      <span class="badge ${SB[p.status]||'badge-gray'}" style="position:absolute;top:8px;right:8px;z-index:2;font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span>
-      ${p.type==='carousel'&&p.slides?.length?`<span style="position:absolute;bottom:6px;right:6px;z-index:2;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;">🎠 ${p.slides.length} slides</span>`:''}
-      ${hasComment?`<span style="position:absolute;bottom:6px;left:6px;z-index:2;background:rgba(0,0,0,.7);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬</span>`:''}
+      <!-- Selection checkbox -->
+      <span onclick="event.stopPropagation();toggleSelect('${p.id}')" style="position:absolute;top:7px;left:7px;z-index:3;width:22px;height:22px;border-radius:6px;background:${isSel?'var(--primary)':'rgba(255,255,255,.85)'};border:2px solid ${isSel?'var(--primary)':'rgba(255,255,255,.6)'};display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.2);font-size:12px;">${isSel?'✓':''}</span>
+      <span class="si ${PSI[p.platform]||''}" style="position:absolute;top:7px;right:7px;z-index:2;width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span>
+      <span class="badge ${SB[p.status]||'badge-gray'}" style="position:absolute;bottom:6px;right:6px;z-index:2;font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span>
+      ${p.type==='carousel'&&p.slides?.length?`<span style="position:absolute;bottom:6px;left:6px;z-index:2;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;">🎠 ${p.slides.length} slides</span>`:''}
+      ${hasComment?`<span style="position:absolute;top:34px;right:7px;z-index:2;background:rgba(37,99,235,.85);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;">💬</span>`:''}
     </div>
     <div class="post-card-body"><div class="post-card-title">${esc(p.title)}</div><div class="post-card-meta">${p.date||'Sem data'} · ${PL[p.platform]||p.platform}</div>${p.campaign?`<div class="post-card-meta" style="margin-top:2px;">📋 ${esc(p.campaign)}</div>`:''}</div>
     <div class="post-card-footer">
@@ -270,6 +300,44 @@ function postCard(p){
       <div style="display:flex;gap:4px;"><button class="btn btn-xs btn-secondary" onclick="event.stopPropagation();openPostEditor('${p.id}')">✏️</button><button class="btn btn-xs btn-primary" onclick="event.stopPropagation();openShareModal('${p.id}')">📤</button><button class="btn btn-xs btn-danger" onclick="event.stopPropagation();doDeletePost('${p.id}')">🗑️</button></div>
     </div>
   </div>`;
+}
+
+// ── Seleção múltipla ─────────────────────────────────────────
+function postCardClick(event, id){
+  // If clicking checkbox or already in selection mode, toggle
+  if(APP.selection.size>0){toggleSelect(id);return;}
+  openPostDetail(id);
+}
+function toggleSelect(id){
+  if(APP.selection.has(id)) APP.selection.delete(id);
+  else APP.selection.add(id);
+  renderPage(APP.currentPage);
+}
+function selClear(){APP.selection.clear();}
+async function selDeleteAll(){
+  if(!APP.selection.size)return;
+  const count=APP.selection.size;
+  if(!confirm(`Excluir ${count} post${count>1?'s':''}?`))return;
+  for(const id of APP.selection){
+    LOCAL.remove('posts',id);
+    DB.remove('posts',id).catch(()=>{});
+  }
+  APP.selection.clear();
+  updateBadges();
+  toast(`🗑️ ${count} post${count>1?'s':''} excluído${count>1?'s':''}!`,'info');
+  renderPage(APP.currentPage);
+}
+function selChangeStatus(ns){
+  if(!APP.selection.size)return;
+  for(const id of APP.selection){
+    LOCAL.update('posts',id,{status:ns});
+    DB.update('posts',id,{status:ns}).catch(()=>{});
+  }
+  APP.selection.clear();
+  updateBadges();
+  toast(`✅ ${APP.selection.size||'Posts'} atualizados!`,'success');
+  renderPage(APP.currentPage);
+  updateCampaignCounts();
 }
 
 function openPostDetail(id){
@@ -941,17 +1009,14 @@ async function saveAgendamento(){
       toast('Post atualizado! ✅','success');
       APP.editingId=null;
     } else {
-      // SINGLE add path: DB.add handles Firebase AND LOCAL fallback internally
-      // Never call LOCAL.add separately — that's what caused duplication
-      let created = null;
-      try{ created = await safeDB(DB.add('posts',data)); }
-      catch(e){ console.warn('DB.add failed:',e.message); }
-      // If Firebase returned a doc, ensure LOCAL has it for immediate display
-      // (onSnapshot may not have fired yet)
-      if (created && created.id && !LOCAL.find('posts', created.id)) {
-        const arr = LOCAL.get('posts');
-        arr.unshift({...data, id: created.id, createdAt: new Date().toISOString()});
-        LOCAL.set('posts', arr);
+      // CREATE: single path
+      // If Firebase ready: FS.add → onSnapshot updates LOCAL (no manual LOCAL touch)
+      // If Firebase offline: DB.add falls back to LOCAL.add internally
+      try{ await safeDB(DB.add('posts',data)); }
+      catch(e){
+        // Timeout or Firebase error: ensure data is in LOCAL
+        if(!_firebaseReady) LOCAL.add('posts',data);
+        console.warn('DB.add:',e.message);
       }
       toast('Agendamento criado! 🗓️','success');
     }
@@ -1268,6 +1333,13 @@ function _pTQ(){if(!_tq.length){_tr=false;return;}_tr=true;const{msg,type}=_tq.s
 
 // ── Extras ────────────────────────────────────────────────────
 function exportPostsCSV(){const ps=LOCAL.get('posts');if(!ps.length){toast('Nenhum post.','warning');return;}const h='Título,Plataforma,Status,Data,Campanha,Tipo';const rows=ps.map(p=>[p.title,p.platform,p.status,p.date,p.campaign,p.type].map(x=>'"'+(x||'').replace(/"/g,'""')+'"').join(','));const csv=[h,...rows].join('\n');const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='aha_posts.csv';a.click();toast('CSV exportado! 📥','success');}
+
+// ── Selection CSS injection ──────────────────────────────────
+(function(){
+  const s=document.createElement('style');
+  s.textContent=`.post-card-selected{outline:2px solid var(--primary);outline-offset:1px;box-shadow:0 0 0 4px var(--primary-glow)!important;}.post-card-selected .post-card-thumb::after{content:'';position:absolute;inset:0;background:rgba(249,115,22,.08);z-index:1;}`;
+  document.head.appendChild(s);
+})();
 
 // ── Utils ─────────────────────────────────────────────────────
 const el=(id)=>document.getElementById(id);
