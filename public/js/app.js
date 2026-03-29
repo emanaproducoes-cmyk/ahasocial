@@ -171,14 +171,25 @@ function updateBadges(){
 // ── Thumbnails ────────────────────────────────────────────────
 function getFileUrl(p){
   if(!p||!p.fileUrl)return null;
-  // Handle old JSON format: {thumb, type:'video', isVideo:true}
   if(p.fileUrl.startsWith('{')){
-    try{const d=JSON.parse(p.fileUrl);return d.thumb||d.url||null;}catch{}
+    try{
+      const d=JSON.parse(p.fileUrl);
+      // Remote cloud URL takes priority (cross-device playback)
+      if(d.url&&d.url.startsWith('http'))return d.url;
+      return d.thumb||d.url||null;
+    }catch{}
   }
   if(p.fileUrl.length>5)return p.fileUrl;
   return null;
 }
-function isVideo(p){return p.fileType==='video'||(p.fileUrl&&(p.fileUrl.startsWith('data:video')||p.fileUrl.startsWith('data:application/octet')));}
+function isVideo(p){
+  if(p.fileType==='video')return true;
+  if(!p.fileUrl)return false;
+  if(p.fileUrl.startsWith('data:video')||p.fileUrl.startsWith('data:application/octet'))return true;
+  // JSON ref with type video (cloud upload)
+  if(p.fileUrl.startsWith('{')){try{const d=JSON.parse(p.fileUrl);return d.type==='video';}catch{}}
+  return false;
+}
 function thumbBg(p){
   const url=getFileUrl(p);
   if(url){
@@ -216,25 +227,36 @@ function thumbInline(p,size=36){
 }
 function thumbFull(p){
   const url=getFileUrl(p);
-  // Video with IndexedDB playback
+  // ── Video ──────────────────────────────────────────────────
   if(isVideo(p)){
+    // Remote URL (Firebase Storage) → always playable cross-device
+    if(p.fileUrl&&p.fileUrl.startsWith('http')){
+      return`<video src="${p.fileUrl}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
+    }
+    // IndexedDB key → try load from local IDB, fallback to thumbnail
     if(p.videoKey){
       const divId='vplay_'+p.id+'_'+Date.now();
       setTimeout(async()=>{
         const blob=await VDB.load(p.videoKey);
         const div=document.getElementById(divId);
-        if(div&&blob){
+        if(!div)return;
+        if(blob){
           const src=URL.createObjectURL(blob);
           div.innerHTML=`<video src="${src}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
-        }else if(div){
-          div.innerHTML=`<div style="height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:36px;gap:8px;background:#111;border-radius:var(--radius);">🎬<div style="font-size:12px;color:#94A3B8;">Vídeo não disponível localmente</div></div>`;
+        } else if(url){
+          // Thumbnail visible, inform user video is local-only
+          div.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;"><span style="font-size:40px;">▶️</span><span style="font-size:11px;font-weight:700;color:#fff;background:rgba(0,0,0,.5);padding:4px 12px;border-radius:20px;">Vídeo disponível apenas no dispositivo original</span></div></div>`;
+        } else {
+          div.innerHTML=`<div style="height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:36px;gap:8px;background:#111;border-radius:var(--radius);">🎬<div style="font-size:12px;color:#94A3B8;text-align:center;padding:0 16px;">Vídeo salvo localmente<br/>Faça upload via Firebase Storage para compartilhar</div></div>`;
         }
       },50);
-      return`<div id="${divId}">${url?`<div style="position:relative;border-radius:var(--radius);overflow:hidden;cursor:pointer;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;">▶️</span></div></div>`:`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:48px;background:#111;border-radius:var(--radius);">🎬</div>`}</div>`;
+      return`<div id="${divId}">${url?`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;">▶️</span></div></div>`:`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:48px;background:#111;border-radius:var(--radius);">🎬</div>`}</div>`;
     }
+    // data:video URL in fileUrl
     if(url)return`<video src="${url}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
     return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:#111;border-radius:var(--radius);">🎬</div>`;
   }
+  // ── Image ─────────────────────────────────────────────────
   if(url)return`<img src="${url}" style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius);background:var(--surface2);display:block;" loading="lazy"/>`;
   return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:var(--surface2);border-radius:var(--radius);">${p.thumb||'📷'}</div>`;
 }
@@ -779,7 +801,6 @@ function renderCalendar(cid,posts,yr,mo){
               if(calIsVid) return`<div style="height:56px;background:#111;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">▶️</div>`;
               return`<div style="height:40px;background:${statusColor}18;border-radius:4px 4px 0 0;display:flex;align-items:center;justify-content:center;font-size:18px;">${p.type==='carousel'?'🎠':(p.thumb||'📷')}</div>`;
             })()}
-            }
             <div style="padding:3px 6px 4px;background:#fff;">
               <div style="display:flex;align-items:center;gap:3px;">
                 <span class="si ${PSI[p.platform]||''}" style="width:11px;height:11px;font-size:5px;border-radius:2px;flex-shrink:0;">${PSH[p.platform]||'?'}</span>
@@ -817,6 +838,17 @@ function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-ov
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 async function onDrop(e,previewId,dataId){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('drag-over');const f=e.dataTransfer?.files[0];if(f)await processFile(f,previewId,dataId);}
 async function onFileChange(inputId,previewId,dataId){const input=el(inputId);if(!input||!input.files[0])return;await processFile(input.files[0],previewId,dataId);input.value='';}
+// ── Helper: store video in IndexedDB (local device only) ─────
+async function _processVideoLocal(file,thumb,prev,dataEl){
+  const objUrl=URL.createObjectURL(file);
+  const vKey='vid_'+Date.now();
+  try{await VDB.save(vKey,file);}catch(e){console.warn('IndexedDB:',e);}
+  const ref=JSON.stringify({thumb,vKey,name:file.name,size:file.size,type:file.type});
+  if(dataEl)dataEl.value=ref;
+  if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video src="${objUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">🎬 ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB <span style="color:var(--yellow);">⚠️ Salvo localmente — link de aprovação não reproduzirá vídeo em outros devices</span></div></div>`;
+  toast(`✅ Vídeo "${file.name}" pronto (local)!`,'success');
+}
+
 // ── IndexedDB for large video storage ────────────────────────
 const VDB={
   db:null,
@@ -861,20 +893,33 @@ async function processFile(file,previewId,dataId){
       if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
       toast(`✅ Imagem carregada!`,'success');
     } else {
-      if(file.size>100*1024*1024){toast('⚠️ Vídeo maior que 100MB.','warning');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande</div>`;return;}
-      // 1. Extract thumbnail for display in all views
+      if(file.size>100*1024*1024){toast('⚠️ Vídeo maior que 100MB.','warning');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande (máx. 100MB)</div>`;return;}
+      // 1. Extract thumbnail
       const thumb=await videoThumbnail(file);
-      // 2. Create object URL for immediate preview
-      const objUrl=URL.createObjectURL(file);
-      // 3. Store video blob in IndexedDB for persistence across sessions
-      const vKey='vid_'+Date.now();
-      try{await VDB.save(vKey,file);}catch(e){console.warn('IndexedDB save failed:',e);}
-      // 4. Store reference: thumbnail for display + IndexedDB key for playback
-      const videoRef=JSON.stringify({thumb,vKey,name:file.name,size:file.size,type:file.type,objUrl});
-      if(dataEl)dataEl.value=videoRef;
-      // Preview with actual video
-      if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video id="vid-preview" src="${objUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">🎬 ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
-      toast(`✅ Vídeo "${file.name}" pronto!`,'success');
+      // 2. Try Firebase Storage → cross-device link sharing
+      if(_firebaseReady&&_storage){
+        try{
+          if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);padding:16px;"><div class="upload-spinner"></div><div style="font-size:12px;font-weight:700;color:var(--text3);">☁️ Enviando para cloud... <span id="vid-pct">0</span>%</div><div style="width:100%;height:6px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:4px;"><div id="vid-bar" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width .3s;"></div></div><div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
+          const uploadPath=`videos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+          const task=_storage.ref(uploadPath).put(file);
+          const cloudUrl=await new Promise((res,rej)=>{
+            task.on('state_changed',snap=>{
+              const pct=Math.round((snap.bytesTransferred/snap.totalBytes)*100);
+              const bar=el('vid-bar'),pctEl=el('vid-pct');
+              if(bar)bar.style.width=pct+'%';
+              if(pctEl)pctEl.textContent=pct;
+            },rej,async()=>res(await task.snapshot.ref.getDownloadURL()));
+          });
+          if(dataEl)dataEl.value=JSON.stringify({url:cloudUrl,thumb,type:'video',isRemote:true,name:file.name,size:file.size});
+          if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video src="${cloudUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">☁️ ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB <span style="color:#16A34A;font-weight:700;">✅ Cloud — funciona em qualquer device</span></div></div>`;
+          toast(`✅ Vídeo "${file.name}" enviado ao cloud!`,'success');
+        }catch(storageErr){
+          console.warn('Firebase Storage indisponível, salvando localmente:',storageErr.message);
+          await _processVideoLocal(file,thumb,prev,dataEl);
+        }
+      } else {
+        await _processVideoLocal(file,thumb,prev,dataEl);
+      }
     }
   }catch(e){
     console.error(e);
@@ -1084,10 +1129,16 @@ async function saveAgendamento(){
       try{
         const fd=JSON.parse(fileRaw);
         if(fd.vKey){
-          // Video stored in IndexedDB
+          // Video stored in IndexedDB (local only)
           fileUrl=fd.thumb||null;
           fileType='video';
           videoKey=fd.vKey;
+          videoName=fd.name||'video.mp4';
+          videoType=fd.type||'video/mp4';
+        } else if(fd.url&&fd.url.startsWith('http')){
+          // Video stored in Firebase Storage (cross-device)
+          fileUrl=fd.url;
+          fileType='video';
           videoName=fd.name||'video.mp4';
           videoType=fd.type||'video/mp4';
         } else {
@@ -1164,7 +1215,7 @@ async function doDeletePost(id){
 }
 function doChangeStatus(id,ns){
   LOCAL.update('posts',id,{status:ns});
-  DB.update('posts',id,{status:ns}).catch(()=>{}); Firebase
+  DB.update('posts',id,{status:ns}).catch(()=>{});
   updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
@@ -1178,7 +1229,7 @@ function updateCampaignCounts(){
 // ── Share ─────────────────────────────────────────────────────
 function openShareModal(id){
   const p=LOCAL.find('posts',id);if(!p)return;
-  const base=window.location.origin+window.location.pathname.replace(/\/[^/]*$/, '/').replace('index.html','');
+  const base=window.location.origin+'/';
   const link=base+'?approval='+id;
   sv('share-link-input',link);
   // Thumbnail preview in modal
@@ -1270,7 +1321,16 @@ async function loadApprovalPost(id){
       thumbEl.innerHTML=`<div><div id="ap-carousel" style="background:var(--surface2);border-radius:var(--radius);overflow:hidden;min-height:200px;">${p.slides.map((s,i)=>`<div class="ap-slide" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:350px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:350px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}</div><div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;"><button onclick="apCarouselNav(-1)" class="btn btn-secondary btn-sm">‹ Anterior</button><span id="ap-carousel-counter" style="font-size:12px;font-weight:700;color:var(--text3);">1/${p.slides.length}</span><button onclick="apCarouselNav(1)" class="btn btn-secondary btn-sm">Próximo ›</button></div></div>`;
       window._apSlideIdx=0;window._apSlides=p.slides;
     }else if(url&&!isVideo(p)){thumbEl.innerHTML=`<img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;"/>`;}
-    else if(url&&isVideo(p)){thumbEl.innerHTML=`<video src="${url}" controls style="width:100%;max-height:400px;display:block;background:#000;"></video>`;}
+    else if(isVideo(p)){
+      const remoteUrl=p.fileUrl&&p.fileUrl.startsWith('http')?p.fileUrl:(p.fileUrl&&p.fileUrl.startsWith('{')?(()=>{try{const d=JSON.parse(p.fileUrl);return d.url&&d.url.startsWith('http')?d.url:null;}catch{return null;}})():null);
+      if(remoteUrl){
+        thumbEl.innerHTML=`<video src="${remoteUrl}" controls style="width:100%;max-height:400px;display:block;background:#000;border-radius:var(--radius);" preload="metadata"></video>`;
+      } else if(url){
+        thumbEl.innerHTML=`<div style="position:relative;"><img src="${url}" style="width:100%;max-height:400px;object-fit:contain;display:block;border-radius:var(--radius);"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:var(--radius);"><span style="font-size:48px;">▶️</span><span style="font-size:12px;font-weight:700;color:#fff;background:rgba(0,0,0,.6);padding:6px 16px;border-radius:20px;text-align:center;">Prévia do vídeo<br/><span style="font-weight:400;font-size:11px;">Vídeo disponível apenas no device de origem</span></span></div></div>`;
+      } else {
+        thumbEl.innerHTML=`<div style="height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#111;border-radius:var(--radius);"><span style="font-size:56px;">▶️</span><span style="font-size:12px;color:#94A3B8;text-align:center;">Vídeo enviado para aprovação</span></div>`;
+      }
+    }
     else{thumbEl.innerHTML=`<div style="font-size:80px;padding:40px;text-align:center;">${p.thumb||'📷'}</div>`;}
   }
 
