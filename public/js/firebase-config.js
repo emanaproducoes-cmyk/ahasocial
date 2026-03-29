@@ -139,24 +139,27 @@ const DB = {
   async getAll(col)        { if (_firebaseReady) { const docs = await FS.getAll(col); if (docs) { LOCAL.set(col, docs); return docs; } } return LOCAL.get(col); },
   listen(col, cb) {
     if (_firebaseReady) {
-      return FS.onSnapshot(col, docs => {
-        // Merge: Firebase is truth, but preserve local-only items (id starts with 'id_')
-        // These are items saved offline that haven't reached Firestore yet
+      return FS.onSnapshot(col, snap => {
+        const docs = snap.docs ? snap.docs.map(d=>({id:d.id,...d.data()})) : snap;
+        // Preserve offline-only items (id_ prefix) not yet in Firebase
         const localOnly = LOCAL.get(col).filter(i => i.id && i.id.startsWith('id_'));
-        const merged = [...docs];
-        localOnly.forEach(lo => { if (!docs.find(d => d.id === lo.id)) merged.push(lo); });
+        // Deduplicate by id
+        const seen = new Set(docs.map(d=>d.id));
+        const extras = localOnly.filter(lo => !seen.has(lo.id));
+        const merged = [...docs, ...extras];
         LOCAL.set(col, merged);
         cb(merged);
-        // Auto-sync local-only items to Firebase when connection is available
-        localOnly.forEach(async item => {
-          const {id, ...data} = item;
+        // Auto-sync offline items to Firebase
+        extras.forEach(async item => {
+          const {id: localId, ...data} = item;
           try {
             const r = await FS.add(col, data);
-            if (r) LOCAL.remove(col, id); // onSnapshot will re-add with Firebase ID
+            if (r) LOCAL.remove(col, localId);
           } catch(e) {}
         });
       });
     }
+    // Offline mode
     cb(LOCAL.get(col));
     const t = setInterval(() => cb(LOCAL.get(col)), 3000);
     return () => clearInterval(t);
