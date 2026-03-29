@@ -372,8 +372,8 @@ function selAll(){
 function renderGrid(cid,posts){
   const g=el(cid);if(!g)return;
   // Note: container divs like revisao-grid already have cards-grid class
-  if(!posts.length){g.innerHTML=selToolbarHTML()+emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}
-  g.innerHTML=selToolbarHTML()+posts.map(p=>postCard(p)).join('');
+  if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}
+  g.innerHTML=posts.map(p=>postCard(p)).join('');
 }
 
 // ── Posts Page — Grade / Lista / Calendário ───────────────────
@@ -407,11 +407,11 @@ function renderPostsPage(){
 
   let content='';
   if(view==='grade'){
-    content=selToolbarHTML()+(posts.length?'<div class="cards-grid">'+posts.map(p=>postCard(p)).join('')+'</div>':emptyS('📭','Nenhum post aqui','Crie um novo agendamento.'));
+    content=(posts.length?'<div class="cards-grid">'+posts.map(p=>postCard(p)).join('')+'</div>':emptyS('📭','Nenhum post aqui','Crie um novo agendamento.'));
   } else if(view==='lista'){
-    content=selToolbarHTML()+renderPostsList(posts);
+    content=renderPostsList(posts);
   } else if(view==='calendario'){
-    content=selToolbarHTML()+'<div id="posts-cal"></div>';
+    content='<div id="posts-cal"></div>';
   }
   wrap.innerHTML=toggleBar+content;
   if(view==='calendario') renderCalendar('posts-cal',posts);
