@@ -96,7 +96,7 @@ function showApp(){
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
   if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
-  if(!LOCAL.get('posts').length)seed();
+  if(!_firebaseReady && !LOCAL.get('posts').length)seed(); // V: só seed em modo offline
   startListeners();
   updateBadges();
   // Restore last visited page (no flash, no delay needed)
@@ -1653,8 +1653,7 @@ async function saveAccount(){
     toast('Conta atualizada! ✅','success');
     APP.editingId=null;
   } else {
-    LOCAL.add('accounts',data);
-    DB.add('accounts',data).catch(()=>{});
+    await DB.add('accounts',data); // II: DB.add gerencia LOCAL+Firebase sem duplicar
     toast('Conta conectada! 🔗','success');
   }
   updateBadges();renderContas();
@@ -1676,8 +1675,7 @@ async function saveCampanha(){const name=v('camp-name')?.trim();if(!name){toast(
     toast('Campanha atualizada! ✅','success');
     APP.editingId=null;
   }else{
-    // LOCAL.add first for instant UI, DB.add for Firebase persistence
-    LOCAL.add('campaigns',data);
+    // DB.add gerencia LOCAL+Firebase sem duplicar
     DB.add('campaigns',data).catch(()=>{}); // async, onSnapshot will update LOCAL
     toast('Campanha criada! 🚀','success');
   }
