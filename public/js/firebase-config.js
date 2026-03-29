@@ -131,35 +131,101 @@ const UPLOAD = {
   }
 };
 
+// ── _syncingSet: por coleção, evita re-sincronização simultânea de ids_ ──
+const _syncingSet = {};
+
 const DB = {
-  async add(col, data)     { if (_firebaseReady) { const r = await FS.add(col, data);     if (r) return r; } return LOCAL.add(col, data); },
-  async update(col, id, d) { if (_firebaseReady) { const r = await FS.update(col, id, d); if (r) { LOCAL.update(col, id, d); return r; } } return LOCAL.update(col, id, d); },
-  async remove(col, id)    { if (_firebaseReady) await FS.delete(col, id); LOCAL.remove(col, id); },
-  async find(col, id)      { if (_firebaseReady) { const r = await FS.get(col, id); if (r) { return r; } } return LOCAL.find(col, id); },
-  async getAll(col)        { if (_firebaseReady) { const docs = await FS.getAll(col); if (docs) { LOCAL.set(col, docs); return docs; } } return LOCAL.get(col); },
-  listen(col, cb) {
+  // ── ADD: Firebase → LOCAL imediato com ID do Firebase (sem id_ temporário)
+  // Evita duplicatas porque o listener não verá o item como "extra" (id_)
+  async add(col, data) {
     if (_firebaseReady) {
-      return FS.onSnapshot(col, snap => {
-        const docs = snap.docs ? snap.docs.map(d=>({id:d.id,...d.data()})) : snap;
-        // Preserve offline-only items (id_ prefix) not yet in Firebase
-        const localOnly = LOCAL.get(col).filter(i => i.id && i.id.startsWith('id_'));
-        // Deduplicate by id
-        const seen = new Set(docs.map(d=>d.id));
-        const extras = localOnly.filter(lo => !seen.has(lo.id));
+      const r = await FS.add(col, data);
+      if (r) {
+        // Adiciona ao LOCAL com o ID real do Firebase ANTES que o listener dispare
+        const arr = LOCAL.get(col);
+        if (!arr.find(i => i.id === r.id)) {
+          arr.unshift(r);
+          LOCAL.set(col, arr);
+        }
+        return r;
+      }
+    }
+    // Modo offline: id_ temporário, será sincronizado quando voltar online
+    return LOCAL.add(col, data);
+  },
+
+  async update(col, id, d) {
+    LOCAL.update(col, id, d); // atualiza LOCAL imediatamente (responsividade)
+    if (_firebaseReady) {
+      const r = await FS.update(col, id, d);
+      if (r) return r;
+    }
+    return LOCAL.find(col, id);
+  },
+
+  async remove(col, id) {
+    LOCAL.remove(col, id); // remove LOCAL imediatamente
+    if (_firebaseReady) await FS.delete(col, id);
+  },
+
+  async find(col, id) {
+    if (_firebaseReady) { const r = await FS.get(col, id); if (r) return r; }
+    return LOCAL.find(col, id);
+  },
+
+  async getAll(col) {
+    if (_firebaseReady) { const docs = await FS.getAll(col); if (docs) { LOCAL.set(col, docs); return docs; } }
+    return LOCAL.get(col);
+  },
+
+  listen(col, cb) {
+    if (!_syncingSet[col]) _syncingSet[col] = new Set();
+    const syncing = _syncingSet[col];
+
+    if (_firebaseReady) {
+      return FS.onSnapshot(col, docs => {
+        // Pega apenas itens locais com prefixo id_ que ainda não estão no Firebase
+        const localItems = LOCAL.get(col);
+        const seenIds = new Set(docs.map(d => d.id));
+
+        // Filtra id_ que: (1) não estão no Firebase, (2) não estão sendo sincronizados agora
+        const extras = localItems.filter(i =>
+          i.id && i.id.startsWith('id_') &&
+          !seenIds.has(i.id) &&
+          !syncing.has(i.id)
+        );
+
+        // Merge: Firebase docs + itens offline pendentes
         const merged = [...docs, ...extras];
         LOCAL.set(col, merged);
         cb(merged);
-        // Auto-sync offline items to Firebase
+
+        // Sincroniza itens offline com Firebase (protegido contra concorrência)
         extras.forEach(async item => {
-          const {id: localId, ...data} = item;
+          if (syncing.has(item.id)) return; // já está sendo sincronizado
+          syncing.add(item.id);
+          const { id: localId, ...data } = item;
           try {
             const r = await FS.add(col, data);
-            if (r) LOCAL.remove(col, localId);
-          } catch(e) {}
+            if (r) {
+              // Remove o item id_ e garante que o item com ID Firebase está no LOCAL
+              LOCAL.remove(col, localId);
+              const arr = LOCAL.get(col);
+              if (!arr.find(i => i.id === r.id)) {
+                arr.unshift(r);
+                LOCAL.set(col, arr);
+              }
+            }
+          } catch(e) {
+            console.warn('Sync offline→Firebase falhou:', e.message);
+          } finally {
+            syncing.delete(item.id);
+          }
         });
       });
     }
-    // Offline mode
+
+    // Modo completamente offline: polling
     cb(LOCAL.get(col));
     const t = setInterval(() => cb(LOCAL.get(col)), 3000);
     return () => clearInterval(t);
