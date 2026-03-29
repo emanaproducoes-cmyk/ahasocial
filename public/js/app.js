@@ -3,6 +3,8 @@ const APP = {
   user:null,
   currentPage: localStorage.getItem('aha_page')||'dashboard',
   currentAccountId: null, // ID of selected account, null = all accounts
+  contaSelMode: false,       // selection mode for contas page
+  contaSelection: new Set(), // selected account IDs
   charts:{}, editingId:null, unsubs:[], agendView:'lista',
   selection: new Set(), // IDs of selected posts
   selMode: false, // selection mode toggle
@@ -1634,9 +1636,45 @@ async function saveApprovalComment(){
 // ── Contas ────────────────────────────────────────────────────
 function renderContas(){
   const accounts=LOCAL.get('accounts'),grid=el('accountsGrid');if(!grid)return;
+  // Update selection toolbar
+  const delBtn=el('btn-del-contas'),selBtn=el('btn-sel-contas'),countEl=el('conta-sel-count');
+  if(selBtn){selBtn.style.background=APP.contaSelMode?'var(--primary)':'';selBtn.style.color=APP.contaSelMode?'#fff':'';selBtn.style.borderColor=APP.contaSelMode?'var(--primary)':'';}
+  if(delBtn){delBtn.style.display=APP.contaSelMode&&APP.contaSelection.size>0?'flex':'none';}
+  if(countEl)countEl.textContent=APP.contaSelection.size;
   if(!accounts.length){grid.innerHTML=emptyS('🔗','Nenhuma conta','Clique em "+ Nova Conta".');return;}
   const bgMap={ig:'radial-gradient(circle at 30% 107%,#fdf497,#fd5949 45%,#d6249f 60%,#285AEB)',fb:'#1877F2',yt:'#FF0000',tt:'#111',li:'#0A66C2',tw:'#1DA1F2'};
-  grid.innerHTML=accounts.map(acc=>`<div class="account-card"><div class="account-card-head"><div class="account-avatar" style="background:${bgMap[acc.platform]||'#888'};color:#fff;font-size:14px;font-weight:800;">${PSH[acc.platform]||'?'}</div><div class="account-info"><div class="account-name">${esc(acc.name)}</div><div class="account-handle">${esc(acc.handle)}</div></div><span class="badge ${acc.status==='active'?'badge-green':'badge-gray'}">${acc.status==='active'?'Ativo':'Inativo'}</span></div><div class="account-stats"><div class="account-stat"><div class="account-stat-val">${acc.followers||'0'}</div><div class="account-stat-label">Seguidores</div></div><div class="account-stat"><div class="account-stat-val">${acc.engagement||'—'}</div><div class="account-stat-label">Engajamento</div></div><div class="account-stat"><div class="account-stat-val">${acc.posts||0}</div><div class="account-stat-label">Posts</div></div><div class="account-stat"><div class="account-stat-val">${PL[acc.platform]||acc.platform}</div><div class="account-stat-label">Plataforma</div></div></div>${acc.platform==='ig'?`<div style="padding:10px 20px;border-top:1px solid var(--border);">${acc.igConnected?`<div style="font-size:12px;color:var(--green);font-weight:600;">✅ Instagram conectado</div>`:`<button class="btn btn-sm btn-primary" style="width:100%;justify-content:center;" onclick="openModal('modalIgSetup')">🔗 Conectar Instagram via API</button>`}</div>`:''}<div class="account-card-footer"><button class="btn btn-sm btn-danger" onclick="doRemoveAccount('${acc.id}')">🗑️ Remover</button><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-secondary" onclick="editAccount('${acc.id}')">✏️ Editar</button><button class="btn btn-sm btn-primary" onclick="doSyncAccount('${acc.id}')">🔄 Sync</button></div></div></div>`).join('');
+  const selMode=APP.contaSelMode;
+  grid.innerHTML=accounts.map(acc=>{
+    const sel=APP.contaSelection.has(acc.id);
+    const selStyle=sel?'outline:2.5px solid var(--primary);outline-offset:2px;':'';
+    const cbHtml=selMode?`<div onclick="toggleContaSel('${acc.id}',event)" style="position:absolute;top:10px;right:10px;z-index:2;width:20px;height:20px;border-radius:6px;border:2px solid ${sel?'var(--primary)':'var(--border2)'};background:${sel?'var(--primary)':'var(--surface)'};display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;">${sel?'<svg width="12" height="12" viewBox="0 0 12 12" fill="#fff"><path d="M2 6l3 3 5-5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':''}</div>`:'';
+    const clickCard=selMode?`onclick="toggleContaSel('${acc.id}',event)"`:'';
+    return `<div class="account-card" style="position:relative;${selStyle}" ${clickCard}>${cbHtml}<div class="account-card-head"><div class="account-avatar" style="background:${bgMap[acc.platform]||'#888'};color:#fff;font-size:14px;font-weight:800;">${PSH[acc.platform]||'?'}</div><div class="account-info"><div class="account-name">${esc(acc.name)}</div><div class="account-handle">${esc(acc.handle)}</div></div><span class="badge ${acc.status==='active'?'badge-green':'badge-gray'}">${acc.status==='active'?'Ativo':'Inativo'}</span></div><div class="account-stats"><div class="account-stat"><div class="account-stat-val">${acc.followers||'0'}</div><div class="account-stat-label">Seguidores</div></div><div class="account-stat"><div class="account-stat-val">${acc.engagement||'—'}</div><div class="account-stat-label">Engajamento</div></div><div class="account-stat"><div class="account-stat-val">${acc.posts||0}</div><div class="account-stat-label">Posts</div></div><div class="account-stat"><div class="account-stat-val">${PL[acc.platform]||acc.platform}</div><div class="account-stat-label">Plataforma</div></div></div>${acc.platform==='ig'?`<div style="padding:10px 20px;border-top:1px solid var(--border);">${acc.igConnected?`<div style="font-size:12px;color:var(--green);font-weight:600;">✅ Instagram conectado</div>`:`<button class="btn btn-sm btn-primary" style="width:100%;justify-content:center;" onclick="openModal('modalIgSetup')">🔗 Conectar Instagram via API</button>`}</div>`:''}<div class="account-card-footer"${selMode?' style="pointer-events:none;opacity:.5;"':''}><button class="btn btn-sm btn-danger" onclick="doRemoveAccount('${acc.id}')">🗑️ Remover</button><div style="display:flex;gap:6px;"><button class="btn btn-sm btn-secondary" onclick="editAccount('${acc.id}')">✏️ Editar</button><button class="btn btn-sm btn-primary" onclick="doSyncAccount('${acc.id}')">🔄 Sync</button></div></div></div>`;
+  }).join('');
+}
+function toggleContaSelMode(){
+  APP.contaSelMode=!APP.contaSelMode;
+  APP.contaSelection.clear();
+  renderContas();
+}
+function toggleContaSel(id,e){
+  if(e){e.stopPropagation();}
+  if(APP.contaSelection.has(id)){APP.contaSelection.delete(id);}else{APP.contaSelection.add(id);}
+  renderContas();
+}
+async function deleteSelectedContas(){
+  const ids=[...APP.contaSelection];
+  if(!ids.length)return;
+  if(!confirm(`Remover ${ids.length} conta(s) selecionada(s)? Esta ação não pode ser desfeita.`))return;
+  for(const id of ids){
+    LOCAL.remove('accounts',id);
+    DB.remove('accounts',id).catch(()=>{});
+  }
+  APP.contaSelection.clear();
+  APP.contaSelMode=false;
+  updateBadges();
+  renderContas();
+  toast(`🗑️ ${ids.length} conta(s) removida(s).`,'success');
 }
 async function doSyncAccount(id){const a=LOCAL.find('accounts',id);if(!a)return;toast('Sincronizando...','info');await new Promise(r=>setTimeout(r,1200));const upd={posts:(a.posts||0)+Math.floor(Math.random()*5)+1};LOCAL.update('accounts',id,upd);DB.update('accounts',id,upd);renderContas();toast(a.name+' sincronizado! ✅','success');}
 async function doRemoveAccount(id){const a=LOCAL.find('accounts',id);if(!a||!confirm('Remover "'+a.name+'"?'))return;LOCAL.remove('accounts',id);DB.remove('accounts',id);updateBadges();renderContas();toast('Conta removida.','info');}
