@@ -929,39 +929,73 @@ async function processFile(file,previewId,dataId){
   const isImg=file.type.startsWith('image/'),isVid=file.type.startsWith('video/');
   if(!isImg&&!isVid){toast('Formato não suportado. Use PNG, JPG, MP4, MOV.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
-  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);font-weight:600;">${isVid?'🎬 Processando vídeo...':'📸 Comprimindo imagem...'}</div>${isVid?`<div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB — aguarde</div>`:''}</div>`;
+
+  // ── Spinner inicial ─────────────────────────────────────────
+  if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);font-weight:600;">${isVid?'🎬 Processando vídeo...':'📸 Comprimindo imagem...'}</div></div>`;
+
+  // ── Helper: checar se Storage está funcional (timeout 4s) ───
+  async function storageOk(){
+    if(!_firebaseReady||!_storage)return false;
+    try{
+      await Promise.race([
+        _storage.ref('.keep').getMetadata().catch(()=>{}),
+        new Promise((_,r)=>setTimeout(()=>r(new Error('timeout')),4000))
+      ]);
+      return true;
+    }catch{return false;}
+  }
+
   try{
     if(isImg){
+      // 1. Comprime sempre
       const compressed=await compressImage(file);
-      // Try Firebase Storage for cross-device access
-      if(_firebaseReady&&_storage){
+
+      // 2. Tenta Storage (com timeout de 5s) — sem travar se offline
+      const useStorage=await Promise.race([
+        storageOk(),
+        new Promise(r=>setTimeout(()=>r(false),5000))
+      ]);
+
+      if(useStorage){
         try{
           if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:130px;gap:8px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:11px;color:var(--text3);font-weight:600;">☁️ Enviando imagem...</div></div>`;
           const imgPath=`images/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
-          const snap=await _storage.ref(imgPath).putString(compressed,'data_url');
+          const uploadTask=_storage.ref(imgPath).putString(compressed,'data_url');
+          const snap=await Promise.race([
+            uploadTask,
+            new Promise((_,r)=>setTimeout(()=>r(new Error('upload timeout')),15000))
+          ]);
           const cloudUrl=await snap.ref.getDownloadURL();
           if(dataEl)dataEl.value=cloudUrl;
           if(prev)prev.innerHTML=`<img src="${cloudUrl}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-          toast(`✅ Imagem carregada!`,'success');
-        }catch(imgErr){
-          console.warn('Storage indisponível, usando base64:',imgErr.message);
-          if(dataEl)dataEl.value=compressed;
-          if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-          toast(`✅ Imagem carregada (local)!`,'success');
+          toast('✅ Imagem carregada!','success');
+          return;
+        }catch(e){
+          console.warn('Storage falhou, usando base64:',e.message);
         }
-      } else {
-        if(dataEl)dataEl.value=compressed;
-        if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-        toast(`✅ Imagem carregada!`,'success');
       }
+
+      // 3. Fallback base64 (sempre funciona)
+      if(dataEl)dataEl.value=compressed;
+      if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+      toast('✅ Imagem carregada!','success');
+
     } else {
-      if(file.size>100*1024*1024){toast('⚠️ Vídeo maior que 100MB.','warning');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande (máx. 100MB)</div>`;return;}
-      // 1. Extract thumbnail
+      // ── VÍDEO ──────────────────────────────────────────────
+      if(file.size>100*1024*1024){
+        toast('⚠️ Vídeo maior que 100MB.','warning');
+        if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande (máx. 100MB)</div>`;
+        return;
+      }
       const thumb=await videoThumbnail(file);
-      // 2. Try Firebase Storage → cross-device link sharing
-      if(_firebaseReady&&_storage){
+      const useStorage=await Promise.race([
+        storageOk(),
+        new Promise(r=>setTimeout(()=>r(false),5000))
+      ]);
+
+      if(useStorage){
         try{
-          if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);padding:16px;"><div class="upload-spinner"></div><div style="font-size:12px;font-weight:700;color:var(--text3);">☁️ Enviando para cloud... <span id="vid-pct">0</span>%</div><div style="width:100%;height:6px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:4px;"><div id="vid-bar" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width .3s;"></div></div><div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
+          if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);padding:16px;"><div class="upload-spinner"></div><div style="font-size:12px;font-weight:700;color:var(--text3);">☁️ Enviando vídeo... <span id="vid-pct">0</span>%</div><div style="width:100%;height:6px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:4px;"><div id="vid-bar" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width .3s;"></div></div><div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
           const uploadPath=`videos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
           const task=_storage.ref(uploadPath).put(file);
           const cloudUrl=await new Promise((res,rej)=>{
@@ -973,19 +1007,19 @@ async function processFile(file,previewId,dataId){
             },rej,async()=>res(await task.snapshot.ref.getDownloadURL()));
           });
           if(dataEl)dataEl.value=JSON.stringify({url:cloudUrl,thumb,type:'video',isRemote:true,name:file.name,size:file.size});
-          if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video src="${cloudUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">☁️ ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB <span style="color:#16A34A;font-weight:700;">✅ Cloud — funciona em qualquer device</span></div></div>`;
+          if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video src="${cloudUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">☁️ ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB <span style="color:#16A34A;font-weight:700;">✅ Cloud</span></div></div>`;
           toast(`✅ Vídeo "${file.name}" enviado ao cloud!`,'success');
-        }catch(storageErr){
-          console.warn('Firebase Storage indisponível, salvando localmente:',storageErr.message);
-          await _processVideoLocal(file,thumb,prev,dataEl);
+          return;
+        }catch(e){
+          console.warn('Storage falhou, usando IndexedDB:',e.message);
         }
-      } else {
-        await _processVideoLocal(file,thumb,prev,dataEl);
       }
+      // Fallback IndexedDB local
+      await _processVideoLocal(file,thumb,prev,dataEl);
     }
   }catch(e){
-    console.error(e);
-    toast('Erro ao processar: '+e.message,'error');
+    console.error('processFile erro:',e);
+    toast('Erro ao processar arquivo: '+e.message,'error');
     if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Erro — tente novamente</div>`;
   }
 }
