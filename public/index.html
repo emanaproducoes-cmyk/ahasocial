@@ -310,8 +310,14 @@
 
     <!-- ════ POSTS ════ -->
     <div class="page-section" id="sec-posts">
-      <div class="page-header"><div><div class="page-header-title">Posts</div><div class="page-header-sub">Todos os posts carregados</div></div><div class="page-header-actions"><button class="btn btn-secondary" onclick="exportPostsCSV()">📥 CSV</button><button class="btn btn-primary" onclick="openNewAgendamento()">+ Novo Post</button></div></div>
-      <div class="cards-grid" id="posts-grid"></div>
+      <div class="page-header">
+        <div><div class="page-header-title">Todos os Posts</div><div class="page-header-sub">Visualize, filtre e gerencie todos os criativos</div></div>
+        <div class="page-header-actions">
+          <button class="btn btn-secondary" onclick="exportPostsCSV()">📥 CSV</button>
+          <button class="btn btn-primary" onclick="openNewAgendamento()">+ Novo Post</button>
+        </div>
+      </div>
+      <div id="posts-page-wrap"></div>
     </div>
 
     <!-- ════ REVISÃO ════ -->
