@@ -159,6 +159,8 @@ function showPage(page,btn,fromHistory){
     _navPushing=false;
   }
   renderPage(page);
+  // Refresh topbar button states
+  setTimeout(()=>updateBadges(),0);
 }
 // Handle browser back/forward
 window.addEventListener('popstate',function(e){
@@ -188,6 +190,19 @@ function updateBadges(){
   setSafe('badge-analise',posts.filter(p=>p.status==='pending').length);
   setSafe('badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
   setSafe('badge-revisao',posts.filter(p=>p.status==='review').length);
+  // Aprovados badge
+  const aprovCount=posts.filter(p=>p.status==='approved').length;
+  const aprovBadge=el('badge-aprovados');
+  if(aprovBadge){aprovBadge.textContent=aprovCount||'';aprovBadge.style.display=aprovCount?'':'none';}
+  // Update selecionar button state
+  const selBtn=el('btn-selecionar');
+  if(selBtn){
+    const pagesWithSel=['posts','agendamentos','analise','aprovados','rejeitados','revisao'];
+    selBtn.style.display=pagesWithSel.includes(APP.currentPage)?'':'none';
+    selBtn.style.background=APP.selMode?'var(--primary)':'';
+    selBtn.style.color=APP.selMode?'#fff':'';
+    selBtn.title=APP.selMode?'Cancelar seleção':'Selecionar posts';
+  }
 }
 
 // ── Thumbnails ────────────────────────────────────────────────
@@ -475,6 +490,7 @@ function selClear(){APP.selection.clear();APP.selMode=false;}
 function toggleSelMode(){
   APP.selMode=!APP.selMode;
   if(!APP.selMode)APP.selection.clear();
+  updateBadges();
   renderPage(APP.currentPage);
 }
 async function selDeleteAll(){
