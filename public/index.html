@@ -146,7 +146,7 @@
         <div class="nav-item" onclick="showPage('posts',this)" style="font-size:12px;">📋 Todos os Posts</div>
         <div class="nav-item" onclick="showPage('revisao',this)" style="font-size:12px;">👁 Revisão <span class="nav-badge yellow" id="badge-revisao">0</span></div>
         <div class="nav-item" onclick="showPage('analise',this)" style="font-size:12px;">⏳ Em Análise <span class="nav-badge yellow" id="badge-analise">0</span></div>
-        <div class="nav-item" onclick="showPage('aprovados',this)" style="font-size:12px;">✅ Aprovados</div>
+        <div class="nav-item" onclick="showPage('aprovados',this)" style="font-size:12px;">✅ Aprovados <span class="nav-badge green" id="badge-aprovados"></span></div>
         <div class="nav-item" onclick="showPage('rejeitados',this)" style="font-size:12px;">❌ Rejeitados <span class="nav-badge red" id="badge-rejeitados">0</span></div>
       </div>
     </div>
@@ -190,6 +190,10 @@
         Sincronizar
       </button>
       <button class="topbar-btn" onclick="exportPostsCSV()">📥 Exportar</button>
+      <button class="topbar-btn" id="btn-selecionar" onclick="toggleSelMode()" style="gap:6px;">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="13"><rect x="2" y="2" width="6" height="6" rx="1.5"/><rect x="12" y="2" width="6" height="6" rx="1.5"/><rect x="2" y="12" width="6" height="6" rx="1.5"/><rect x="12" y="12" width="6" height="6" rx="1.5"/></svg>
+        Selecionar
+      </button>
       <button class="topbar-btn primary" onclick="openNewAgendamento()">+ Novo Post</button>
       <div class="icon-btn" onclick="toast('Sem novas notificações','info')">
         <svg viewBox="0 0 20 20" fill="currentColor" width="15"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zm0 16a2 2 0 002-2H8a2 2 0 002 2z"/></svg>
