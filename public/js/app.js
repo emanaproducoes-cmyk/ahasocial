@@ -4,6 +4,7 @@ const APP = {
   currentPage: localStorage.getItem('aha_page')||'dashboard',
   charts:{}, editingId:null, unsubs:[], agendView:'lista',
   selection: new Set(), // IDs of selected posts
+  selMode: false, // selection mode toggle
   postsView: localStorage.getItem('aha_posts_view')||'grade', // grade | lista | calendario
   kanbanCols: (()=>{
     const COLS_V='v5';
@@ -99,9 +100,12 @@ function showApp(){
   updateBadges();
   // Restore last visited page (no flash, no delay needed)
   const savedPage=localStorage.getItem('aha_page')||'dashboard';
-  // Find matching nav btn
-  const navBtn=document.querySelector(`[onclick*="'${savedPage}'"]`);
-  showPage(savedPage, navBtn);
+  // Set initial history state from hash or saved page
+  const hashPage=location.hash.replace('#','').split('&')[0]||savedPage;
+  const initPage=(hashPage&&hashPage!=='posts-menu')?hashPage:savedPage;
+  history.replaceState({page:initPage},'',`#${initPage}`);
+  const navBtn=document.querySelector(`[onclick*="'${initPage}'"]`);
+  showPage(initPage, navBtn, true);
   if(!APP._badgeInterval)APP._badgeInterval=setInterval(()=>updateBadges(),5000);
 }
 
@@ -127,7 +131,8 @@ function startListeners(){
 }
 
 // ── Navegação ─────────────────────────────────────────────────
-function showPage(page,btn){
+let _navPushing=false; // guard to avoid double pushState
+function showPage(page,btn,fromHistory){
   if(page==='posts-menu'){
     const sub=el('posts-submenu');
     if(sub)sub.style.display=sub.style.display==='none'?'block':'none';
@@ -136,15 +141,32 @@ function showPage(page,btn){
   document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   const sec=el('sec-'+page);if(sec)sec.classList.add('active');
-  if(btn)btn.classList.add('active');
+  if(btn){btn.classList.add('active');}
+  else{
+    // Auto-activate correct nav item
+    const navBtn=document.querySelector(`[onclick*="'${page}'"]`);
+    if(navBtn)navBtn.classList.add('active');
+  }
   APP.currentPage=page;
-  // FIX IV: persist page across refresh
   localStorage.setItem('aha_page',page);
   const titles={dashboard:'Dashboard',contas:'Contas',agendamentos:'Agendamentos',posts:'Posts',analise:'Em Análise',aprovados:'Aprovados',rejeitados:'Rejeitados',campanhas:'Campanhas',trafego:'Tráfego Pago',workflow:'Workflow',revisao:'Revisão'};
   setText('pageTitle',titles[page]||page);
   if(window.innerWidth<960)el('sidebar').classList.remove('mobile-open');
+  // Push browser history only when user navigates (not from popstate)
+  if(!fromHistory&&!_navPushing){
+    _navPushing=true;
+    history.pushState({page},'',`#${page}`);
+    _navPushing=false;
+  }
   renderPage(page);
 }
+// Handle browser back/forward
+window.addEventListener('popstate',function(e){
+  const page=(e.state&&e.state.page)||location.hash.replace('#','').replace('?approval=','').split('&')[0]||'dashboard';
+  if(page&&page!=='posts-menu'){
+    showPage(page,null,true);
+  }
+});
 function renderPage(page){
   const r={
     dashboard:renderDashboard, contas:renderContas,
@@ -289,7 +311,9 @@ function mkC(id,type,data,options={}){const c=el(id);if(!c)return;APP.charts[id]
 // ── Grid de posts ─────────────────────────────────────────────
 // ── Toolbar de seleção (dropdown) ─────────────────────────────
 function selToolbarHTML(){
-  if(!APP.selection.size) return '';
+  // Show "Selecionar" button when not in selMode
+  if(!APP.selMode) return `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-sm btn-secondary" onclick="toggleSelMode()" style="gap:6px;"><svg viewBox='0 0 16 16' width='13' height='13' fill='currentColor'><rect x='1' y='1' width='5' height='5' rx='1'/><rect x='10' y='1' width='5' height='5' rx='1'/><rect x='1' y='10' width='5' height='5' rx='1'/><rect x='10' y='10' width='5' height='5' rx='1'/></svg> Selecionar</button></div>`;
+  if(!APP.selection.size) return `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-sm btn-secondary" onclick="toggleSelMode()" style="gap:6px;"><svg viewBox='0 0 16 16' width='13' height='13' fill='currentColor'><rect x='1' y='1' width='5' height='5' rx='1'/><rect x='10' y='1' width='5' height='5' rx='1'/><rect x='1' y='10' width='5' height='5' rx='1'/><rect x='10' y='10' width='5' height='5' rx='1'/></svg> Selecionar</button></div>`;
   const n=APP.selection.size;
   return`<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--primary-light);border:1.5px solid var(--primary-border);border-radius:var(--radius);margin-bottom:14px;flex-wrap:wrap;position:relative;z-index:10;">
     <div style="display:flex;align-items:center;gap:8px;min-width:0;">
@@ -313,7 +337,7 @@ function selToolbarHTML(){
           <div onclick="selDeleteAll();closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--red);transition:background .12s;" onmouseover="this.style.background='var(--red-bg)'" onmouseout="this.style.background=''">🗑️ Excluir selecionados</div>
         </div>
       </div>
-      <button class="btn btn-sm btn-ghost" style="color:var(--text3);" onclick="selClear();renderPage(APP.currentPage)">✕</button>
+      <button class="btn btn-sm btn-ghost" style="color:var(--text3);" onclick="APP.selMode=false;selClear();renderPage(APP.currentPage)">✕ Cancelar</button>
     </div>
   </div>`;
 }
@@ -412,8 +436,8 @@ function postListClick(event,id){
   openPostDetail(id);
 }
 function selAllToggle(chk){
-  if(chk.checked){LOCAL.get('posts').forEach(p=>APP.selection.add(p.id));}
-  else APP.selection.clear();
+  if(chk.checked){APP.selMode=true;LOCAL.get('posts').forEach(p=>APP.selection.add(p.id));}
+  else{APP.selection.clear();APP.selMode=false;}
   renderPostsPage();
 }
 function postCard(p){
@@ -422,8 +446,8 @@ function postCard(p){
   return`<div class="post-card${isSel?' post-card-selected':''}" onclick="postCardClick(event,'${p.id}')">
     <div class="post-card-thumb">
       ${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
-      <!-- Selection checkbox -->
-      <span onclick="event.stopPropagation();toggleSelect('${p.id}')" style="position:absolute;top:7px;left:7px;z-index:3;width:22px;height:22px;border-radius:6px;background:${isSel?'var(--primary)':'rgba(255,255,255,.85)'};border:2px solid ${isSel?'var(--primary)':'rgba(255,255,255,.6)'};display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.2);font-size:12px;">${isSel?'✓':''}</span>
+      <!-- Selection checkbox — visible only in selMode -->
+      <span onclick="event.stopPropagation();toggleSelect('${p.id}')" style="position:absolute;top:7px;left:7px;z-index:3;width:22px;height:22px;border-radius:6px;background:${isSel?'var(--primary)':'rgba(255,255,255,.85)'};border:2px solid ${isSel?'var(--primary)':'rgba(255,255,255,.6)'};display:${APP.selMode?'flex':'none'};align-items:center;justify-content:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.2);font-size:12px;">${isSel?'✓':''}</span>
       <span class="si ${PSI[p.platform]||''}" style="position:absolute;top:7px;right:7px;z-index:2;width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span>
       <span class="badge ${SB[p.status]||'badge-gray'}" style="position:absolute;bottom:6px;right:6px;z-index:2;font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span>
       ${p.type==='carousel'&&p.slides?.length?`<span style="position:absolute;bottom:6px;left:6px;z-index:2;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;">🎠 ${p.slides.length} slides</span>`:''}
@@ -439,8 +463,7 @@ function postCard(p){
 
 // ── Seleção múltipla ─────────────────────────────────────────
 function postCardClick(event, id){
-  // If clicking checkbox or already in selection mode, toggle
-  if(APP.selection.size>0){toggleSelect(id);return;}
+  if(APP.selMode){toggleSelect(id);return;}
   openPostDetail(id);
 }
 function toggleSelect(id){
@@ -448,7 +471,12 @@ function toggleSelect(id){
   else APP.selection.add(id);
   renderPage(APP.currentPage);
 }
-function selClear(){APP.selection.clear();}
+function selClear(){APP.selection.clear();APP.selMode=false;}
+function toggleSelMode(){
+  APP.selMode=!APP.selMode;
+  if(!APP.selMode)APP.selection.clear();
+  renderPage(APP.currentPage);
+}
 async function selDeleteAll(){
   if(!APP.selection.size)return;
   const count=APP.selection.size;
@@ -889,9 +917,27 @@ async function processFile(file,previewId,dataId){
   try{
     if(isImg){
       const compressed=await compressImage(file);
-      if(dataEl)dataEl.value=compressed;
-      if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
-      toast(`✅ Imagem carregada!`,'success');
+      // Try Firebase Storage for cross-device access
+      if(_firebaseReady&&_storage){
+        try{
+          if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:130px;gap:8px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:11px;color:var(--text3);font-weight:600;">☁️ Enviando imagem...</div></div>`;
+          const imgPath=`images/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+          const snap=await _storage.ref(imgPath).putString(compressed,'data_url');
+          const cloudUrl=await snap.ref.getDownloadURL();
+          if(dataEl)dataEl.value=cloudUrl;
+          if(prev)prev.innerHTML=`<img src="${cloudUrl}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+          toast(`✅ Imagem carregada!`,'success');
+        }catch(imgErr){
+          console.warn('Storage indisponível, usando base64:',imgErr.message);
+          if(dataEl)dataEl.value=compressed;
+          if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+          toast(`✅ Imagem carregada (local)!`,'success');
+        }
+      } else {
+        if(dataEl)dataEl.value=compressed;
+        if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
+        toast(`✅ Imagem carregada!`,'success');
+      }
     } else {
       if(file.size>100*1024*1024){toast('⚠️ Vídeo maior que 100MB.','warning');if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande (máx. 100MB)</div>`;return;}
       // 1. Extract thumbnail
