@@ -99,8 +99,20 @@ function showApp(){
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
   if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
   if(!_firebaseReady && !LOCAL.get('posts').length)seed(); // V: só seed em modo offline
+  // II: Restore persisted account selection
+  const savedAccount=localStorage.getItem('aha_activeAccount');
+  if(savedAccount){
+    APP.currentAccountId=savedAccount;
+    const savedAcc=LOCAL.find('accounts',savedAccount);
+    if(!savedAcc){
+      // Account was deleted - clear saved selection
+      APP.currentAccountId=null;
+      localStorage.removeItem('aha_activeAccount');
+    }
+  }
   startListeners();
   updateBadges();
+  updateAccChip();
   // Restore last visited page (no flash, no delay needed)
   const savedPage=localStorage.getItem('aha_page')||'dashboard';
   // Set initial history state from hash or saved page
@@ -195,6 +207,9 @@ function getActivePosts(){
 }
 function switchAccount(accountId){
   APP.currentAccountId=accountId;
+  // II: Persist selected account across reload/logout
+  if(accountId){localStorage.setItem('aha_activeAccount',accountId);}
+  else{localStorage.removeItem('aha_activeAccount');}
   updateAccChip();
   updateBadges();
   renderPage(APP.currentPage);
@@ -405,7 +420,7 @@ function thumbFull(p){
 
 // ── Dashboard ─────────────────────────────────────────────────
 function renderDashboard(){
-  const posts=LOCAL.get('posts');
+  const posts=getActivePosts();
   setText('kpi-total',posts.length);setText('kpi-approved',posts.filter(p=>p.status==='approved').length);
   setText('kpi-pending',posts.filter(p=>p.status==='pending').length);setText('kpi-rejected',posts.filter(p=>p.status==='rejected').length);
   const kpiPlat=el('kpi-total-plat');if(kpiPlat)kpiPlat.textContent=posts.length;
@@ -469,7 +484,7 @@ function toggleSelMenu(){
 }
 function closeSelMenu(){const d=el('sel-dropdown');if(d)d.style.display='none';}
 function selAll(){
-  const posts=LOCAL.get('posts');
+  const posts=getActivePosts();
   posts.forEach(p=>APP.selection.add(p.id));
   renderPage(APP.currentPage);
 }
@@ -484,7 +499,7 @@ function renderGrid(cid,posts){
 // ── Posts Page — Grade / Lista / Calendário ───────────────────
 function renderPostsPage(){
   const wrap=el('posts-page-wrap');if(!wrap)return;
-  const posts=LOCAL.get('posts');
+  const posts=getActivePosts();
   const view=APP.postsView||'grade';
 
   // View toggle buttons
@@ -707,7 +722,7 @@ function saveKanbanCols(){localStorage.setItem('aha_kanban_cols',JSON.stringify(
 
 function renderKanban(){
   const board=el('kanban-board');if(!board)return;
-  const posts=LOCAL.get('posts');
+  const posts=getActivePosts();
   // Map each post to a column based on status
   const grouped={};
   APP.kanbanCols.forEach(c=>grouped[c.id]=[]);
@@ -858,7 +873,7 @@ function setAgendView(view,btn){
 }
 function applyAgendView(view){
   ['lista','grade','calendario'].forEach(vi=>{const e2=el('agend-'+vi);if(e2)e2.style.display=vi===view?'block':'none';});
-  const posts=LOCAL.get('posts');
+  const posts=getActivePosts();
   if(view==='lista')renderAgendList(posts);
   if(view==='grade'){const g=el('agend-cards');if(g)g.innerHTML=posts.length?posts.map(p=>postCard(p)).join(''):emptyS('📅','Sem posts','Crie um agendamento.');}
   if(view==='calendario')renderCalendar('agend-cal',posts);
@@ -900,12 +915,12 @@ function renderCalendar(cid,posts,yr,mo){
     </button>
     <div id="month-dropdown-${cid}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:300;width:240px;padding:10px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;">
-        ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y},${i});toggleMonthDropdown('${cid}')" style="padding:8px;text-align:center;cursor:pointer;border-radius:7px;font-size:12px;font-weight:${i===M?'800':'500'};color:${i===M?'#fff':'var(--text2)'};background:${i===M?'var(--primary)':'transparent'};transition:all .12s;" onmouseover="if(${i}!==${M})this.style.background='var(--surface2)'" onmouseout="if(${i}!==${M})this.style.background='transparent'">${mn}</div>`).join('')}
+        ${MN.map((mn,i)=>`<div onclick="renderCalendar('${cid}',getActivePosts(),${Y},${i});toggleMonthDropdown('${cid}')" style="padding:8px;text-align:center;cursor:pointer;border-radius:7px;font-size:12px;font-weight:${i===M?'800':'500'};color:${i===M?'#fff':'var(--text2)'};background:${i===M?'var(--primary)':'transparent'};transition:all .12s;" onmouseover="if(${i}!==${M})this.style.background='var(--surface2)'" onmouseout="if(${i}!==${M})this.style.background='transparent'">${mn}</div>`).join('')}
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y-1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">← ${Y-1}</button>
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">Hoje</button>
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${Y+1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">${Y+1} →</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${Y-1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">← ${Y-1}</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${now.getFullYear()},${now.getMonth()});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">Hoje</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${Y+1},${M});toggleMonthDropdown('${cid}')" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;">${Y+1} →</button>
       </div>
     </div>
   </div>`;
@@ -913,13 +928,13 @@ function renderCalendar(cid,posts,yr,mo){
   let h=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:8px;">
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===0?Y-1:Y},${M===0?11:M-1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">‹</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${M===0?Y-1:Y},${M===0?11:M-1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">‹</button>
         ${monthBtn}
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${M===11?Y+1:Y},${M===11?0:M+1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">›</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${M===11?Y+1:Y},${M===11?0:M+1})" style="width:32px;height:32px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;">›</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:12px;color:var(--text3);">${posts.length} post${posts.length!==1?'s':''} no mês</span>
-        <button onclick="renderCalendar('${cid}',LOCAL.get('posts'),${now.getFullYear()},${now.getMonth()})" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Hoje</button>
+        <button onclick="renderCalendar('${cid}',getActivePosts(),${now.getFullYear()},${now.getMonth()})" style="padding:6px 14px;background:var(--primary);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">Hoje</button>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface2);border-bottom:1px solid var(--border);">
