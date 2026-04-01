@@ -67,8 +67,19 @@ async function doLogin(){
   else{const name=email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());APP.user={email,name,avatar:name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),role:'Gerente de Conteúdo'};localStorage.setItem('aha_user',JSON.stringify(APP.user));toast('Bem-vindo!','warning');showApp();}
 }
 async function doGoogleLogin(){
-  if(_firebaseReady){const u=await AUTH.loginGoogle();if(!u)toast('Erro no Google login.','error');}
-  else{APP.user={email:'usuario@gmail.com',name:'Usuário Google',avatar:'UG',role:'Gerente de Conteúdo'};localStorage.setItem('aha_user',JSON.stringify(APP.user));showApp();}
+  console.log('[v0] doGoogleLogin chamado, _firebaseReady:', _firebaseReady);
+  if(_firebaseReady){
+    console.log('[v0] Chamando AUTH.loginGoogle()...');
+    const u=await AUTH.loginGoogle();
+    console.log('[v0] Resultado do login:', u ? u.email : null);
+    if(!u)toast('Erro no Google login.','error');
+  }
+  else{
+    console.log('[v0] Firebase não está pronto, usando modo local');
+    APP.user={email:'usuario@gmail.com',name:'Usuário Google',avatar:'UG',role:'Gerente de Conteúdo'};
+    localStorage.setItem('aha_user',JSON.stringify(APP.user));
+    showApp();
+  }
 }
 function doLogout(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
@@ -996,7 +1007,7 @@ function toggleMonthDropdown(cid){
 }
 function calClick(cid,ds){if(cid==='agend-cal'){openNewAgendamento();setTimeout(()=>sv('ag-date',ds),60);}}
 
-// ── Upload ────────────────────────────────────────────────────
+// ── Upload ─────────��──────────────────────────────────────────
 function triggerFile(inputId){el(inputId)?.click();}
 function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}

@@ -17,17 +17,29 @@ const INSTAGRAM_CONFIG = {
 let _db = null, _auth = null, _storage = null, _firebaseReady = false;
 
 function initFirebase() {
+  console.log('[v0] initFirebase chamado');
   try {
-    if (typeof firebase === 'undefined') { console.warn('Firebase SDK não carregado.'); return false; }
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    if (typeof firebase === 'undefined') {
+      console.warn('[v0] Firebase SDK não carregado - typeof firebase:', typeof firebase);
+      return false;
+    }
+    console.log('[v0] Firebase SDK carregado, apps.length:', firebase.apps.length);
+    if (!firebase.apps.length) {
+      console.log('[v0] Inicializando Firebase app com config:', FIREBASE_CONFIG.projectId);
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
     _db      = firebase.firestore();
     _auth    = firebase.auth();
     _storage = firebase.storage();
     _firebaseReady = true;
+    console.log('[v0] Firebase pronto! _auth:', !!_auth, '_db:', !!_db);
     _db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
     console.log('✅ Firebase conectado!');
     return true;
-  } catch(e) { console.error('Firebase erro:', e.message); return false; }
+  } catch(e) {
+    console.error('[v0] Firebase erro:', e.message, e);
+    return false;
+  }
 }
 
 const LOCAL = {
@@ -77,8 +89,21 @@ const AUTH = {
     try { const r = await _auth.signInAnonymously(); return r.user; } catch(e) { return null; }
   },
   async loginGoogle() {
-    if (!_auth) return null;
-    try { const r = await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); return r.user; } catch(e) { console.error('Google login:', e.message); return null; }
+    console.log('[v0] loginGoogle chamado, _auth:', !!_auth, '_firebaseReady:', _firebaseReady);
+    if (!_auth) {
+      console.log('[v0] _auth é null, Firebase não está pronto');
+      return null;
+    }
+    try {
+      console.log('[v0] Tentando signInWithPopup...');
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const r = await _auth.signInWithPopup(provider);
+      console.log('[v0] signInWithPopup sucesso:', r.user?.email);
+      return r.user;
+    } catch(e) {
+      console.error('[v0] Google login erro:', e.code, e.message);
+      return null;
+    }
   },
   async loginEmail(email, password) {
     if (!_auth) return null;
