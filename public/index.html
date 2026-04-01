@@ -244,3 +244,133 @@
   </div>
 
 </div>
+
+<!-- ════════════════ APP PRINCIPAL ════════════════ -->
+<div id="app" style="display:none;">
+  <!-- Área principal do app será carregada pelo JavaScript -->
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-logo">
+      <span class="aha-mark">AHA</span>
+      <span class="aha-sub">Social Planning</span>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item" onclick="showPage('dashboard',this)">Dashboard</button>
+      <button class="nav-item" onclick="showPage('contas',this)">Contas <span id="badge-contas" class="nav-badge"></span></button>
+      <button class="nav-item" onclick="showPage('posts',this)">Posts</button>
+      <button class="nav-item" onclick="showPage('analise',this)">Em Análise <span id="badge-analise" class="nav-badge"></span></button>
+      <button class="nav-item" onclick="showPage('aprovados',this)">Aprovados <span id="badge-aprovados" class="nav-badge"></span></button>
+      <button class="nav-item" onclick="showPage('rejeitados',this)">Rejeitados <span id="badge-rejeitados" class="nav-badge"></span></button>
+      <button class="nav-item" onclick="showPage('campanhas',this)">Campanhas</button>
+      <button class="nav-item" onclick="showPage('workflow',this)">Workflow</button>
+    </nav>
+    <div class="sidebar-user">
+      <div id="sideAvatar" class="sidebar-avatar">U</div>
+      <div id="sideUserName" class="sidebar-username">Usuário</div>
+      <button onclick="doLogout()" class="btn-logout">Sair</button>
+    </div>
+  </div>
+  
+  <div class="topbar">
+    <div class="topbar-main">
+      <div class="topbar-left">
+        <button onclick="toggleMobile()" class="btn-mobile-menu">☰</button>
+      </div>
+      <div class="acc-switcher" id="accSwitcher">
+        <div class="acc-chip" id="accChip" onclick="toggleAccDropdown(event)">
+          <div class="acc-chip-avatar" id="accChipAvatar">✦</div>
+          <div class="acc-chip-body">
+            <div class="acc-chip-name" id="accChipName">Todas as Contas</div>
+            <div class="acc-chip-sub" id="accChipSub">Exibindo tudo</div>
+          </div>
+        </div>
+        <div class="acc-dropdown" id="accDropdown" style="display:none;"></div>
+      </div>
+      <div class="topbar-right">
+        <div id="topAvatar" class="topbar-avatar">U</div>
+      </div>
+    </div>
+    <div class="topbar-nav">
+      <div class="tbn-item" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</div>
+      <div class="tbn-sep"></div>
+      <div class="tbn-item" data-page="contas" onclick="showPage('contas')">Contas <span id="tbn-badge-contas" class="tbn-badge"></span></div>
+      <div class="tbn-item" data-page="posts" onclick="showPage('posts')">Posts</div>
+      <div class="tbn-item" data-page="analise" onclick="showPage('analise')">Em Análise <span id="tbn-badge-analise" class="tbn-badge yellow"></span></div>
+      <div class="tbn-item" data-page="aprovados" onclick="showPage('aprovados')">Aprovados <span id="tbn-badge-aprovados" class="tbn-badge green"></span></div>
+      <div class="tbn-item" data-page="rejeitados" onclick="showPage('rejeitados')">Rejeitados <span id="tbn-badge-rejeitados" class="tbn-badge red"></span></div>
+      <div class="tbn-sep"></div>
+      <div class="tbn-item" data-page="campanhas" onclick="showPage('campanhas')">Campanhas</div>
+      <div class="tbn-item" data-page="workflow" onclick="showPage('workflow')">Workflow</div>
+    </div>
+    <div class="acc-filter-bar" id="accFilterBar">
+      <span>Filtrando por:</span>
+      <strong id="accFilterName"></strong>
+      <button onclick="switchAccount(null)">Limpar filtro</button>
+    </div>
+  </div>
+  
+  <main class="main-content">
+    <h1 id="pageTitle" class="page-title">Dashboard</h1>
+    
+    <section id="sec-dashboard" class="page-section active">
+      <div id="dashboard-content"></div>
+    </section>
+    
+    <section id="sec-contas" class="page-section">
+      <div id="contas-content"></div>
+    </section>
+    
+    <section id="sec-posts" class="page-section">
+      <div id="posts-content"></div>
+    </section>
+    
+    <section id="sec-analise" class="page-section">
+      <div id="analise-grid" class="posts-grid"></div>
+    </section>
+    
+    <section id="sec-aprovados" class="page-section">
+      <div id="aprovados-grid" class="posts-grid"></div>
+    </section>
+    
+    <section id="sec-rejeitados" class="page-section">
+      <div id="rejeitados-grid" class="posts-grid"></div>
+    </section>
+    
+    <section id="sec-revisao" class="page-section">
+      <div id="revisao-grid" class="posts-grid"></div>
+    </section>
+    
+    <section id="sec-campanhas" class="page-section">
+      <div id="campanhas-content"></div>
+    </section>
+    
+    <section id="sec-agendamentos" class="page-section">
+      <div id="agendamentos-content"></div>
+    </section>
+    
+    <section id="sec-workflow" class="page-section">
+      <div id="workflow-content"></div>
+    </section>
+    
+    <section id="sec-trafego" class="page-section">
+      <div id="trafego-content"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Modais -->
+<div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
+<div id="modal" class="modal"></div>
+<div id="toast" class="toast"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+
+<!-- App Scripts -->
+<script src="js/firebase-config.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

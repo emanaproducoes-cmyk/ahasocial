@@ -79,6 +79,66 @@ input,textarea,select{font-family:var(--font);}
 /* ══ LOGIN PAGE ══ */
 #loginPage{display:none;position:fixed;inset:0;z-index:9000;overflow:hidden;}
 #loginPage.visible{display:flex!important;}
+
+/* ═══ NOVO DESIGN DE LOGIN ═══ */
+.aha-login-wrapper{display:flex;width:100%;height:100%;min-height:100vh;}
+.aha-login-banner{width:55%;position:relative;overflow:hidden;display:flex;flex-direction:column;background:linear-gradient(135deg,#84CC16 0%,#A3E635 50%,#BEF264 100%);}
+.aha-banner-overlay{position:absolute;inset:0;background:linear-gradient(135deg,rgba(132,204,22,0.95),rgba(163,230,53,0.9));}
+.aha-deco{position:absolute;border-radius:50%;opacity:0.15;pointer-events:none;}
+.aha-deco-1{width:400px;height:400px;background:#fff;top:-100px;left:-100px;}
+.aha-deco-2{width:300px;height:300px;background:#fff;bottom:20%;right:-80px;}
+.aha-deco-3{width:200px;height:200px;background:#F97316;bottom:-50px;left:30%;}
+.aha-banner-content{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:40px;text-align:center;}
+.aha-logo-row{display:flex;align-items:center;gap:12px;margin-bottom:40px;}
+.aha-logo-icon{font-size:36px;}
+.aha-logo-text{text-align:left;}
+.aha-logo-aha{font-family:'StribeMarker',sans-serif;font-size:56px;color:#F97316;line-height:1;display:block;text-shadow:2px 2px 8px rgba(0,0,0,0.15);}
+.aha-logo-sub{font-size:11px;font-weight:800;color:#fff;letter-spacing:3px;text-transform:uppercase;display:block;margin-top:-4px;text-shadow:1px 1px 4px rgba(0,0,0,0.2);}
+.aha-headline-block{margin-bottom:40px;}
+.aha-headline{font-size:32px;font-weight:800;color:#fff;line-height:1.3;text-shadow:1px 1px 6px rgba(0,0,0,0.15);}
+.aha-headline-accent{color:#FBBF24;display:block;}
+.aha-headline-desc{font-size:15px;color:rgba(255,255,255,0.9);margin-top:16px;line-height:1.6;}
+.aha-headline-desc strong{color:#fff;font-weight:700;}
+.aha-feature-list{list-style:none;display:flex;flex-direction:column;gap:10px;width:100%;max-width:320px;}
+.aha-feature-item{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.25);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.4);border-radius:12px;padding:12px 18px;font-size:13px;font-weight:600;color:#fff;transition:all 0.2s;}
+.aha-feature-item:hover{background:rgba(255,255,255,0.35);transform:translateX(4px);}
+.aha-feat-icon{font-size:16px;}
+.aha-banner-copy{position:absolute;bottom:20px;left:0;right:0;text-align:center;font-size:9px;font-weight:600;color:rgba(255,255,255,0.6);letter-spacing:1px;}
+
+/* ═══ LOGIN SIDE ═══ */
+.aha-login-side{width:45%;display:flex;align-items:center;justify-content:center;background:#fff;padding:48px;overflow-y:auto;}
+.aha-login-box{width:100%;max-width:380px;}
+.aha-login-logo{display:flex;align-items:baseline;gap:8px;margin-bottom:32px;}
+.aha-login-logo-aha{font-family:'StribeMarker',sans-serif;font-size:36px;color:#F97316;line-height:1;}
+.aha-login-logo-label{font-size:9px;font-weight:800;color:#64748B;letter-spacing:2px;text-transform:uppercase;}
+.aha-login-title{font-size:24px;font-weight:800;color:var(--text);margin-bottom:6px;}
+.aha-login-subtitle{font-size:13px;color:var(--text3);margin-bottom:28px;}
+.aha-form-group{margin-bottom:18px;}
+.aha-form-label{display:block;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;}
+.aha-form-input{width:100%;padding:12px 16px;background:#F8FAFC;border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;font-family:var(--font);transition:all 0.15s;outline:none;}
+.aha-form-input:focus{border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px var(--primary-glow);}
+.aha-forgot-row{text-align:right;margin-top:6px;}
+.aha-forgot-link{font-size:12px;color:var(--primary);font-weight:600;cursor:pointer;}
+.aha-forgot-link:hover{text-decoration:underline;}
+.aha-btn-primary{width:100%;padding:14px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));border:none;border-radius:var(--radius-sm);color:#fff;font-weight:800;font-size:14px;font-family:var(--font);cursor:pointer;transition:all 0.2s;box-shadow:0 4px 16px rgba(249,115,22,0.4);margin-top:8px;}
+.aha-btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(249,115,22,0.5);}
+.aha-divider{text-align:center;font-size:12px;color:var(--text3);padding:18px 0;position:relative;}
+.aha-divider span{background:#fff;padding:0 12px;position:relative;z-index:1;}
+.aha-divider::before{content:'';position:absolute;top:50%;left:0;right:0;height:1px;background:var(--border);}
+.aha-btn-google{width:100%;padding:12px 16px;background:#fff;border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-weight:700;font-size:13px;font-family:var(--font);cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:10px;}
+.aha-btn-google:hover{border-color:var(--border2);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.aha-signup-row{text-align:center;margin-top:20px;font-size:12px;color:var(--text3);}
+.aha-signup-link{color:var(--primary);font-weight:700;cursor:pointer;margin-left:4px;}
+.aha-signup-link:hover{text-decoration:underline;}
+
+/* Login responsivo */
+@media(max-width:900px){
+  .aha-login-wrapper{flex-direction:column;}
+  .aha-login-banner{width:100%;min-height:45vh;}
+  .aha-login-side{width:100%;padding:32px 24px;}
+  .aha-headline{font-size:24px;}
+  .aha-feature-list{max-width:280px;}
+}
 .login-left{width:55%;position:relative;overflow:hidden;display:flex;flex-direction:column;flex-shrink:0;}
 .login-right{width:45%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;padding:48px;overflow-y:auto;}
 .login-banner-img{width:100%;height:100%;object-fit:cover;object-position:center;position:absolute;inset:0;display:block;}
@@ -152,6 +212,11 @@ input,textarea,select{font-family:var(--font);}
 .notif-dot{position:absolute;top:6px;right:6px;width:7px;height:7px;background:var(--primary);border-radius:50%;border:2px solid #fff;}
 .top-avatar{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#F97316,#FBBF24);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background-size:cover;background-position:center;}
 .menu-toggle{display:none;width:36px;height:36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer;align-items:center;justify-content:center;font-size:18px;}
+.btn-logout{background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;transition:all 0.15s;font-family:var(--font);}
+.btn-logout:hover{background:var(--red-bg);border-color:var(--red-border);color:var(--red);}
+.btn-mobile-menu{display:none;width:36px;height:36px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer;align-items:center;justify-content:center;font-size:18px;}
+.topbar-avatar{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#F97316,#FBBF24);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background-size:cover;background-position:center;}
+@media(max-width:960px){.btn-mobile-menu{display:flex;}}
 
 /* ══ MAIN ══ */
 .main-content{margin-left:var(--sidebar-w);padding-top:56px;min-height:100vh;}
