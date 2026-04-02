@@ -1,4 +1,10 @@
-// ── AHA Social Planning — firebase-config.js v6.0 (Multi-device sync) ──
+// ── AHA Social Planning — firebase-config.js v7.0 ──
+// ARQUITETURA: Firestore é a fonte única da verdade.
+// LOCAL é apenas um espelho/cache do Firestore.
+// Reads vão para LOCAL (que é sempre igual ao Firestore).
+// Writes vão para Firestore → onSnapshot atualiza LOCAL → re-render.
+// ──────────────────────────────────────────────────────────────────
+
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyBI37N7zGJB6OL5ISLHjLeCvTOmh0avUBo",
   authDomain:        "ahasocialplanning.firebaseapp.com",
@@ -15,143 +21,216 @@ const INSTAGRAM_CONFIG = {
   scope:       "instagram_basic,instagram_content_publish,instagram_manage_insights"
 };
 
-let _db = null, _auth = null, _storage = null, _firebaseReady = false;
+// ── Estado interno ────────────────────────────────────────────────
+let _db = null, _auth = null, _storage = null;
+let _firebaseReady = false;
 
-// ── Init Firebase ─────────────────────────────────────────────
+// Promise que resolve após o PRIMEIRO sync do Firestore chegar
+// (usada para garantir que o primeiro render usa dados reais)
+let _firstSyncResolvers = {};
+let _firstSyncPromises = {};
+['posts','accounts','campaigns'].forEach(col => {
+  _firstSyncPromises[col] = new Promise(resolve => { _firstSyncResolvers[col] = resolve; });
+});
+
+// ── Init Firebase ─────────────────────────────────────────────────
 function initFirebase() {
   try {
-    if (typeof firebase === 'undefined') { console.warn('Firebase SDK não carregado.'); return false; }
+    if (typeof firebase === 'undefined') {
+      console.warn('[AHA] Firebase SDK não carregado.');
+      return false;
+    }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db      = firebase.firestore();
     _auth    = firebase.auth();
     _storage = firebase.storage();
     _firebaseReady = true;
-    _db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
-    console.log('✅ Firebase conectado!');
+
+    // Persistência offline (uma aba por vez — múltiplas abas usam sync)
+    _db.enablePersistence({ synchronizeTabs: true })
+      .then(() => console.log('[AHA] Persistência offline ativada.'))
+      .catch(e => {
+        if (e.code === 'unimplemented') console.warn('[AHA] Browser não suporta persistência offline.');
+        // failed-precondition = múltiplas abas abertas (normal, sem problema)
+      });
+
+    console.log('[AHA] ✅ Firebase conectado.');
     return true;
-  } catch(e) { console.error('Firebase erro:', e.message); return false; }
+  } catch(e) {
+    console.error('[AHA] Firebase erro:', e.message);
+    return false;
+  }
 }
 
-// ── LOCAL cache (fallback / cache only) ──────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
+function _nowISO() { return new Date().toISOString(); }
+
+function _fsTimestampToISO(val) {
+  if (!val) return _nowISO();
+  if (typeof val.toDate === 'function') return val.toDate().toISOString();
+  if (typeof val === 'string') return val;
+  return _nowISO();
+}
+
+function _cleanDoc(docSnapshot) {
+  // Converte FieldValues (Timestamps etc) para ISO string
+  const data = docSnapshot.data();
+  const clean = { id: docSnapshot.id };
+  Object.entries(data || {}).forEach(([k, v]) => {
+    clean[k] = (v && typeof v.toDate === 'function') ? v.toDate().toISOString() : v;
+  });
+  return clean;
+}
+
+function _sortByDate(docs) {
+  // Ordena client-side por createdAt desc (evita índice no Firestore)
+  return [...docs].sort((a, b) => {
+    const ta = a.createdAt || '0';
+    const tb = b.createdAt || '0';
+    return tb.localeCompare(ta);
+  });
+}
+
+// ── LOCAL: cache localStorage (espelho do Firestore) ─────────────
+// APENAS para leitura pelo app.js. Escrita feita aqui via onSnapshot.
 const LOCAL = {
   get(k)        { try{return JSON.parse(localStorage.getItem('aha_'+k))||[];}catch{return[];} },
-  set(k,d)      { try{localStorage.setItem('aha_'+k,JSON.stringify(d));}catch(e){} },
-  add(k,item)   { const a=this.get(k); const n={...item,id:'loc_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),createdAt:new Date().toISOString()}; a.unshift(n); this.set(k,a); return n; },
-  update(k,id,d){ const a=this.get(k); const i=a.findIndex(x=>x.id===id); if(i!==-1){a[i]={...a[i],...d,updatedAt:new Date().toISOString()};this.set(k,a);return a[i];}return null; },
-  remove(k,id)  { const a=this.get(k).filter(x=>x.id!==id); this.set(k,a); },
+  set(k,d)      { try{localStorage.setItem('aha_'+k,JSON.stringify(d));}catch(e){console.warn('[AHA] localStorage:',e);} },
+  add(k,item)   {
+    const id = 'loc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    const n = {...item, id, createdAt: _nowISO()};
+    const a = this.get(k); a.unshift(n); this.set(k,a); return n;
+  },
+  update(k,id,d){
+    const a = this.get(k); const i = a.findIndex(x=>x.id===id);
+    if(i!==-1){a[i]={...a[i],...d,updatedAt:_nowISO()};this.set(k,a);return a[i];}
+    return null;
+  },
+  remove(k,id)  { this.set(k, this.get(k).filter(x=>x.id!==id)); },
   find(k,id)    { return this.get(k).find(x=>x.id===id)||null; },
 };
 
-// ── Firestore operations ──────────────────────────────────────
+// ── Firestore: operações diretas ──────────────────────────────────
 const FS = {
-  col(name) {
-    // Dados globais compartilhados entre todos os usuários do mesmo projeto
-    return _db.collection(name);
-  },
+  // ⚠️ NÃO usa orderBy() — evita necessidade de índice.
+  // Ordenação é feita client-side em _sortByDate().
+
   async getAll(col) {
     if (!_db) return null;
     try {
-      const snap = await this.col(col).orderBy('createdAt','desc').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const snap = await _db.collection(col).get();
+      return _sortByDate(snap.docs.map(_cleanDoc));
     } catch(e) {
-      console.error(`FS.getAll(${col}):`, e.message);
+      _logFSError('getAll', col, e);
       return null;
     }
   },
+
   async get(col, id) {
     if (!_db) return null;
-    try { const d = await this.col(col).doc(id).get(); return d.exists ? { id: d.id, ...d.data() } : null; }
-    catch(e) { console.error(`FS.get:`, e.message); return null; }
+    try {
+      const d = await _db.collection(col).doc(id).get();
+      return d.exists ? _cleanDoc(d) : null;
+    } catch(e) {
+      _logFSError('get', col, e);
+      return null;
+    }
   },
+
   async add(col, data) {
     if (!_db) return null;
-    // Remove campos undefined e id temporário
-    const clean = {};
-    Object.entries(data).forEach(([k,v]) => { if(v !== undefined && k !== 'id') clean[k] = v; });
+    // Usa ISO string para createdAt — NÃO usa serverTimestamp() (que é null no cliente)
+    const now = _nowISO();
+    const clean = _cleanPayload(data);
     try {
-      const ref = await this.col(col).add({
-        ...clean,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      return { id: ref.id, ...clean };
+      const ref = await _db.collection(col).add({ ...clean, createdAt: now, updatedAt: now });
+      const result = { id: ref.id, ...clean, createdAt: now, updatedAt: now };
+      console.log(`[AHA] ✅ Firestore add: ${col}/${ref.id}`);
+      return result;
     } catch(e) {
-      console.error(`FS.add(${col}):`, e.message);
-      // Verifica se é erro de permissão
-      if (e.code === 'permission-denied') {
-        DB._showPermissionError();
-      }
+      _logFSError('add', col, e);
       return null;
     }
   },
+
   async update(col, id, data) {
     if (!_db) return null;
-    const clean = {};
-    Object.entries(data).forEach(([k,v]) => { if(v !== undefined && k !== 'id') clean[k] = v; });
+    const clean = _cleanPayload(data);
     try {
-      await this.col(col).doc(id).update({
-        ...clean,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      await _db.collection(col).doc(id).update({ ...clean, updatedAt: _nowISO() });
       return { id, ...clean };
     } catch(e) {
-      console.error(`FS.update(${col}, ${id}):`, e.message);
+      _logFSError('update', col, e);
       return null;
     }
   },
+
   async delete(col, id) {
     if (!_db) return false;
-    try { await this.col(col).doc(id).delete(); return true; }
-    catch(e) { console.error(`FS.delete:`, e.message); return false; }
+    try { await _db.collection(col).doc(id).delete(); return true; }
+    catch(e) { _logFSError('delete', col, e); return false; }
   },
-  onSnapshot(col, callback, onError) {
+
+  // ⚠️ NÃO usa orderBy() — evita necessidade de índice Firestore.
+  onSnapshot(col, onData, onErr) {
     if (!_db) return () => {};
-    try {
-      return this.col(col)
-        .orderBy('createdAt', 'desc')
-        .onSnapshot(
-          snap => {
-            const docs = snap.docs.map(d => {
-              const data = d.data();
-              // Converte Firestore Timestamps para ISO strings
-              const clean = { id: d.id };
-              Object.entries(data).forEach(([k, v]) => {
-                if (v && typeof v.toDate === 'function') {
-                  clean[k] = v.toDate().toISOString();
-                } else {
-                  clean[k] = v;
-                }
-              });
-              return clean;
-            });
-            callback(docs);
-          },
-          err => {
-            console.error(`FS.onSnapshot(${col}):`, err.message);
-            if (err.code === 'permission-denied') DB._showPermissionError();
-            if (onError) onError(err);
-          }
-        );
-    } catch(e) { console.error('onSnapshot setup:', e.message); return () => {}; }
+    console.log(`[AHA] 📡 Iniciando listener: ${col}`);
+    return _db.collection(col).onSnapshot(
+      { includeMetadataChanges: false },
+      snap => {
+        const docs = _sortByDate(snap.docs.map(_cleanDoc));
+        console.log(`[AHA] 🔄 Snapshot ${col}: ${docs.length} docs`);
+        onData(docs);
+      },
+      err => {
+        _logFSError('onSnapshot', col, err);
+        if (onErr) onErr(err);
+      }
+    );
   }
 };
 
-// ── AUTH ──────────────────────────────────────────────────────
+function _cleanPayload(data) {
+  // Remove undefined, id temporários, campos não serializáveis
+  const clean = {};
+  Object.entries(data).forEach(([k, v]) => {
+    if (v === undefined) return;
+    if (k === 'id') return; // id é gerenciado pelo Firestore
+    // Converte null para string vazia em campos de texto
+    clean[k] = v;
+  });
+  return clean;
+}
+
+function _logFSError(op, col, e) {
+  console.error(`[AHA] ❌ Firestore ${op}(${col}):`, e.code, e.message);
+  if (e.code === 'permission-denied') {
+    const msg = '🔴 Firebase: sem permissão de acesso. Configure as Regras do Firestore:\n\nrules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}';
+    console.error(msg);
+    if (typeof toast === 'function') {
+      toast('🔴 Firestore: permissão negada. Verifique as Regras no Console Firebase.', 'error');
+    }
+  }
+  if (e.code === 'failed-precondition' && e.message.includes('index')) {
+    console.error('[AHA] ⚠️ Índice Firestore necessário. Usando listener sem orderBy para evitar isso.');
+  }
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────
 const AUTH = {
-  async signInAnonymous() {
-    if (!_auth) return null;
-    try { const r = await _auth.signInAnonymously(); return r.user; } catch(e) { return null; }
-  },
   async loginGoogle() {
     if (!_auth) return null;
-    try { const r = await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); return r.user; }
-    catch(e) { console.error('Google login:', e.message); return null; }
+    try {
+      const r = await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      return r.user;
+    } catch(e) { console.error('[AHA] Google login:', e.message); return null; }
   },
   async loginEmail(email, password) {
     if (!_auth) return null;
-    try { return (await _auth.signInWithEmailAndPassword(email, password)).user; }
-    catch(e) {
-      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-email') {
+    try {
+      return (await _auth.signInWithEmailAndPassword(email, password)).user;
+    } catch(e) {
+      if (['auth/user-not-found','auth/invalid-credential','auth/invalid-email'].includes(e.code)) {
         try { return (await _auth.createUserWithEmailAndPassword(email, password)).user; } catch { return null; }
       }
       return null;
@@ -164,17 +243,17 @@ const AUTH = {
   }
 };
 
-// ── INSTAGRAM ────────────────────────────────────────────────
+// ── INSTAGRAM ─────────────────────────────────────────────────────
 const INSTAGRAM = {
   startOAuth() {
     if (!INSTAGRAM_CONFIG.appId || INSTAGRAM_CONFIG.appId === 'SEU_INSTAGRAM_APP_ID') return false;
-    const p = new URLSearchParams({ client_id: INSTAGRAM_CONFIG.appId, redirect_uri: INSTAGRAM_CONFIG.redirectUri, scope: INSTAGRAM_CONFIG.scope, response_type: 'code', state: 'aha_' + Date.now() });
-    window.open('https://api.instagram.com/oauth/authorize?' + p.toString(), 'ig_oauth', 'width=600,height=700');
+    const p = new URLSearchParams({ client_id: INSTAGRAM_CONFIG.appId, redirect_uri: INSTAGRAM_CONFIG.redirectUri, scope: INSTAGRAM_CONFIG.scope, response_type: 'code', state: 'aha_'+Date.now() });
+    window.open('https://api.instagram.com/oauth/authorize?'+p.toString(), 'ig_oauth', 'width=600,height=700');
     return true;
   }
 };
 
-// ── UPLOAD ───────────────────────────────────────────────────
+// ── UPLOAD ────────────────────────────────────────────────────────
 const UPLOAD = {
   async file(file, folder, onProgress) {
     if (_storage) {
@@ -183,104 +262,42 @@ const UPLOAD = {
         const task = _storage.ref(path).put(file);
         return new Promise((resolve, reject) => {
           task.on('state_changed',
-            s => { if (onProgress) onProgress(Math.round((s.bytesTransferred / s.totalBytes) * 100)); },
+            s => { if (onProgress) onProgress(Math.round((s.bytesTransferred/s.totalBytes)*100)); },
             reject,
-            async () => resolve({ url: await task.snapshot.ref.getDownloadURL(), type: file.type.startsWith('video') ? 'video' : 'image', isRemote: true })
+            async () => resolve({ url: await task.snapshot.ref.getDownloadURL(), type: file.type.startsWith('video')?'video':'image', isRemote: true })
           );
         });
-      } catch(e) { console.warn('Storage falhou, usando base64'); }
+      } catch(e) { console.warn('[AHA] Storage falhou, usando base64'); }
     }
     return new Promise((resolve, reject) => {
-      if (file.size > 8 * 1024 * 1024) { reject(new Error('Máx. 8MB no modo offline.')); return; }
+      if (file.size > 8*1024*1024) { reject(new Error('Máx. 8MB no modo offline.')); return; }
       const r = new FileReader();
-      r.onload  = e => resolve({ url: e.target.result, type: file.type.startsWith('video') ? 'video' : 'image', isRemote: false });
+      r.onload  = e => resolve({ url: e.target.result, type: file.type.startsWith('video')?'video':'image', isRemote: false });
       r.onerror = () => reject(new Error('Erro ao ler arquivo.'));
       r.readAsDataURL(file);
     });
   }
 };
 
-// ── DB: camada unificada (Firestore primeiro, localStorage como cache) ─
+// ── DB: API pública — Firestore + LOCAL em sincronia ─────────────
+//
+// REGRAS FUNDAMENTAIS:
+// 1. Writes → sempre vão para Firestore (se disponível)
+// 2. onSnapshot → atualiza LOCAL imediatamente
+// 3. Reads (LOCAL.get/find) → sempre retornam dados do Firestore (via mirror)
+// 4. SEM orderBy no Firestore — sort feito client-side
+//
 const DB = {
-  _permissionErrorShown: false,
-  _listeners: {},   // col → unsubscribe function
-  _cache: {},       // col → docs[]
-  _pendingMigration: false,
+  _syncing: {},           // col → Set de ids sendo migrados
+  _listeners: {},         // col → unsubscribe fn
+  _initialDataReady: {},  // col → boolean (primeiro snapshot recebido)
 
-  _showPermissionError() {
-    if (this._permissionErrorShown) return;
-    this._permissionErrorShown = true;
-    console.error('🔴 FIRESTORE: Permissão negada. Configure as regras no Console Firebase.');
-    // Tenta mostrar toast se disponível
-    if (typeof toast === 'function') {
-      toast('⚠️ Configure as Regras do Firestore no Console Firebase para sincronizar entre dispositivos.', 'error', 8000);
-    }
-  },
-
-  // ── Verifica se Firestore está realmente acessível ────────
-  async testAccess() {
-    if (!_firebaseReady || !_db) return false;
-    try {
-      // Tenta ler a coleção de posts
-      await FS.col('posts').limit(1).get();
-      console.log('✅ Firestore: acesso OK');
-      return true;
-    } catch(e) {
-      console.error('❌ Firestore: acesso negado —', e.message);
-      if (e.code === 'permission-denied') this._showPermissionError();
-      return false;
-    }
-  },
-
-  // ── Migra dados do localStorage para o Firestore ─────────
-  async migrateLocalToFirestore() {
-    if (!_firebaseReady || this._pendingMigration) return;
-    this._pendingMigration = true;
-
-    const COLS = ['posts', 'accounts', 'campaigns'];
-    let migrated = 0;
-
-    for (const col of COLS) {
-      const localItems = LOCAL.get(col);
-      // Apenas migra itens com id_ temporário (criados offline)
-      const offlineItems = localItems.filter(i => i.id && (i.id.startsWith('id_') || i.id.startsWith('loc_')));
-
-      for (const item of offlineItems) {
-        const { id: localId, ...data } = item;
-        // Remove timestamps do servidor Firestore que não são serializáveis
-        const clean = { ...data };
-        delete clean.createdAt;
-        delete clean.updatedAt;
-
-        const result = await FS.add(col, clean);
-        if (result) {
-          LOCAL.remove(col, localId);
-          const arr = LOCAL.get(col);
-          if (!arr.find(i => i.id === result.id)) {
-            arr.unshift(result);
-            LOCAL.set(col, arr);
-          }
-          migrated++;
-          console.log(`✅ Migrado: ${col}/${localId} → ${result.id}`);
-        }
-      }
-    }
-
-    if (migrated > 0) {
-      console.log(`✅ ${migrated} item(s) migrado(s) para o Firestore.`);
-      if (typeof toast === 'function') toast(`✅ ${migrated} item(s) sincronizado(s) com Firebase.`, 'success');
-    }
-
-    this._pendingMigration = false;
-    return migrated;
-  },
-
-  // ── CRUD ─────────────────────────────────────────────────
+  // ── CRUD ────────────────────────────────────────────────────
   async add(col, data) {
     if (_firebaseReady) {
       const result = await FS.add(col, data);
       if (result) {
-        // Garante que está no cache LOCAL com o ID real do Firebase
+        // Atualiza LOCAL com o ID real do Firestore (antes do onSnapshot chegar)
         const arr = LOCAL.get(col);
         if (!arr.find(i => i.id === result.id)) {
           arr.unshift(result);
@@ -289,12 +306,15 @@ const DB = {
         return result;
       }
     }
-    // Fallback offline
-    return LOCAL.add(col, data);
+    // Fallback offline: id temporário loc_
+    const item = LOCAL.add(col, data);
+    console.warn(`[AHA] ⚠️ Offline: ${col} salvo localmente (${item.id})`);
+    return item;
   },
 
   async update(col, id, d) {
-    LOCAL.update(col, id, d); // atualiza cache imediatamente
+    // Atualiza LOCAL imediatamente para UI responsiva
+    LOCAL.update(col, id, d);
     if (_firebaseReady) {
       const r = await FS.update(col, id, d);
       if (r) return r;
@@ -308,60 +328,105 @@ const DB = {
   },
 
   async find(col, id) {
-    if (_firebaseReady) { const r = await FS.get(col, id); if (r) return r; }
+    if (_firebaseReady) {
+      const r = await FS.get(col, id);
+      if (r) return r;
+    }
     return LOCAL.find(col, id);
   },
 
   async getAll(col) {
     if (_firebaseReady) {
       const docs = await FS.getAll(col);
-      if (docs !== null) {
-        LOCAL.set(col, docs);
-        this._cache[col] = docs;
-        return docs;
-      }
+      if (docs !== null) { LOCAL.set(col, docs); return docs; }
     }
     return LOCAL.get(col);
   },
 
-  // ── Listener em tempo real ────────────────────────────────
+  // ── listen: escuta em tempo real o Firestore ─────────────────
+  // - onSnapshot atualiza LOCAL e chama cb(docs) automaticamente
+  // - cb é chamado IMEDIATAMENTE com dados locais cacheados, depois com Firestore
+  // - Migra automaticamente itens loc_ para Firestore
   listen(col, cb) {
+    if (!this._syncing[col]) this._syncing[col] = new Set();
+
     if (_firebaseReady) {
+      // Chama cb imediatamente com cache LOCAL (enquanto Firestore carrega)
+      const cached = LOCAL.get(col);
+      if (cached.length > 0) cb(cached);
+
       const unsub = FS.onSnapshot(
         col,
-        docs => {
-          // Atualiza cache LOCAL com dados do Firestore (fonte da verdade)
-          LOCAL.set(col, docs);
-          this._cache[col] = docs;
-          cb(docs);
+        async (fsDocs) => {
+          // Firestore é a fonte da verdade: substitui LOCAL completamente
+          // mas preserva itens loc_ (offline, ainda não sincronizados)
+          const localItems = LOCAL.get(col);
+          const fsIds = new Set(fsDocs.map(d => d.id));
+          const offlineItems = localItems.filter(i => i.id && i.id.startsWith('loc_') && !fsIds.has(i.id));
+
+          // Merge: dados Firestore + pendentes offline
+          const merged = _sortByDate([...fsDocs, ...offlineItems]);
+          LOCAL.set(col, merged);
+
+          // Marca primeiro sync como pronto
+          if (!this._initialDataReady[col]) {
+            this._initialDataReady[col] = true;
+            if (_firstSyncResolvers[col]) _firstSyncResolvers[col](merged);
+            console.log(`[AHA] ✅ Primeiro sync ${col}: ${fsDocs.length} docs`);
+          }
+
+          // Notifica app.js
+          cb(merged);
+
+          // Migra itens offline para Firestore
+          for (const item of offlineItems) {
+            if (this._syncing[col].has(item.id)) continue;
+            this._syncing[col].add(item.id);
+            const { id: locId, createdAt, updatedAt, ...data } = item;
+            const result = await FS.add(col, { ...data, createdAt });
+            if (result) {
+              LOCAL.remove(col, locId);
+              const arr = LOCAL.get(col);
+              if (!arr.find(i => i.id === result.id)) arr.unshift(result);
+              LOCAL.set(col, arr);
+              console.log(`[AHA] ✅ Migrado offline: ${col}/${locId} → ${result.id}`);
+              // Disparar re-render
+              cb(LOCAL.get(col));
+            }
+            this._syncing[col].delete(item.id);
+          }
         },
-        err => {
-          // Se o snapshot falhar, cai para o localStorage
-          console.warn(`Listener ${col} falhou, usando cache local:`, err.message);
+        (err) => {
+          console.error(`[AHA] ❌ Listener ${col} falhou:`, err.message);
+          // Em caso de erro, usa LOCAL (pode estar desatualizado, mas melhor que nada)
           cb(LOCAL.get(col));
         }
       );
+
+      this._listeners[col] = unsub;
       return unsub;
     }
 
-    // Modo completamente offline: usa localStorage
+    // ── Modo completamente offline ────────────────────────────
+    console.warn(`[AHA] ⚠️ Modo offline — ${col} usa apenas localStorage`);
     cb(LOCAL.get(col));
-    const t = setInterval(() => cb(LOCAL.get(col)), 3000);
+    const t = setInterval(() => cb(LOCAL.get(col)), 2000);
     return () => clearInterval(t);
   },
 
-  // ── Inicialização: testa acesso e migra dados ─────────────
-  async init() {
-    if (!_firebaseReady) {
-      console.warn('Firebase não disponível — modo offline.');
+  // ── Aguarda primeiro sync de todas as coleções ────────────
+  // Retorna depois de no máximo `timeoutMs` ms para não travar o app
+  async waitForFirstSync(timeoutMs = 5000) {
+    if (!_firebaseReady) return false;
+    const cols = ['posts', 'accounts', 'campaigns'];
+    try {
+      await Promise.race([
+        Promise.all(cols.map(c => _firstSyncPromises[c])),
+        new Promise(r => setTimeout(r, timeoutMs))
+      ]);
+      return true;
+    } catch(e) {
       return false;
     }
-
-    const hasAccess = await this.testAccess();
-    if (!hasAccess) return false;
-
-    // Migra dados offline para Firestore
-    await this.migrateLocalToFirestore();
-    return true;
   }
 };
