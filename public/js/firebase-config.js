@@ -442,8 +442,36 @@ const DB = {
         },
         (err) => {
           console.error(`[AHA] ❌ Listener ${col} falhou:`, err.message);
-          // Em caso de erro, usa LOCAL (pode estar desatualizado, mas melhor que nada)
+          // Resolve o firstSync para não bloquear waitForFirstSync indefinidamente
+          if (!DB._initialDataReady[col]) {
+            DB._initialDataReady[col] = true;
+            if (_firstSyncResolvers[col]) _firstSyncResolvers[col]([]);
+          }
+          // Usa cache LOCAL (pode estar desatualizado, mas melhor que nada)
           cb(LOCAL.get(col));
+          // Tenta reconectar após 3s em caso de falha temporária
+          if (!_cancelled) {
+            setTimeout(() => {
+              if (!_cancelled && _db) {
+                console.log(`[AHA] 🔄 Tentando reconectar listener: ${col}`);
+                if (_unsubFirestore) { try { _unsubFirestore(); } catch(e) {} }
+                _unsubFirestore = FS.onSnapshot(col, async (fsDocs) => {
+                  const localItems = LOCAL.get(col);
+                  const fsIds = new Set(fsDocs.map(d => d.id));
+                  const offlineItems = localItems.filter(i => i.id && i.id.startsWith('loc_') && !fsIds.has(i.id));
+                  const merged = _sortByDate([...fsDocs, ...offlineItems]);
+                  LOCAL.set(col, merged);
+                  if (!DB._initialDataReady[col]) {
+                    DB._initialDataReady[col] = true;
+                    if (_firstSyncResolvers[col]) _firstSyncResolvers[col](merged);
+                  }
+                  cb(merged);
+                }, (retryErr) => {
+                  console.error(`[AHA] ❌ Reconexão ${col} também falhou:`, retryErr.message);
+                });
+              }
+            }, 3000);
+          }
         }
       );
 
