@@ -34,30 +34,57 @@ let _firstSyncPromises = {};
 });
 
 // ── Init Firebase ─────────────────────────────────────────────────
+// Promise que resolve quando o Firebase Auth estiver pronto com sessão válida
+let _authReadyResolve;
+const _authReady = new Promise(r => { _authReadyResolve = r; });
+
 function initFirebase() {
   try {
     if (typeof firebase === 'undefined') {
       console.warn('[AHA] Firebase SDK não carregado.');
+      _authReadyResolve(false);
       return false;
     }
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
     _db      = firebase.firestore();
     _auth    = firebase.auth();
     _storage = firebase.storage();
-    _firebaseReady = true;
 
-    // Persistência offline (uma aba por vez — múltiplas abas usam sync)
+    // Persistência offline
     _db.enablePersistence({ synchronizeTabs: true })
-      .then(() => console.log('[AHA] Persistência offline ativada.'))
-      .catch(e => {
-        if (e.code === 'unimplemented') console.warn('[AHA] Browser não suporta persistência offline.');
-        // failed-precondition = múltiplas abas abertas (normal, sem problema)
-      });
+      .catch(e => { /* failed-precondition = múltiplas abas, normal */ });
 
-    console.log('[AHA] ✅ Firebase conectado.');
+    // ── AUTH GARANTIDO ───────────────────────────────────────────
+    // Aguarda o Firebase Auth resolver o estado (pode ter sessão existente).
+    // Se não houver sessão nenhuma, faz login anônimo automaticamente.
+    // Isso garante que TODOS os dispositivos sempre têm request.auth != null
+    // e portanto têm acesso ao Firestore.
+    _auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        // Já tem sessão (email/google/anônimo) — Firestore liberado
+        console.log('[AHA] ✅ Auth OK:', user.isAnonymous ? 'anônimo' : user.email);
+        _firebaseReady = true;
+        _authReadyResolve(true);
+      } else {
+        // Sem sessão → login anônimo silencioso para liberar Firestore
+        console.log('[AHA] 🔄 Sem sessão, fazendo login anônimo...');
+        try {
+          await _auth.signInAnonymously();
+          // onAuthStateChanged vai disparar novamente com o usuário anônimo
+        } catch(e) {
+          console.error('[AHA] ❌ Login anônimo falhou:', e.message);
+          // Se o login anônimo falhou, tenta continuar mesmo assim
+          _firebaseReady = true;
+          _authReadyResolve(false);
+        }
+      }
+    });
+
+    console.log('[AHA] Firebase inicializado. Aguardando auth...');
     return true;
   } catch(e) {
     console.error('[AHA] Firebase erro:', e.message);
+    _authReadyResolve(false);
     return false;
   }
 }
@@ -344,16 +371,21 @@ const DB = {
   },
 
   // ── listen: escuta em tempo real o Firestore ─────────────────
+  // - Aguarda auth estar pronta antes de criar o listener Firestore
   // - onSnapshot atualiza LOCAL e chama cb(docs) automaticamente
-  // - cb é chamado IMEDIATAMENTE com dados locais cacheados, depois com Firestore
   // - Migra automaticamente itens loc_ para Firestore
   listen(col, cb) {
     if (!this._syncing[col]) this._syncing[col] = new Set();
 
-    if (_firebaseReady) {
-      // Chama cb imediatamente com cache LOCAL (enquanto Firestore carrega)
+    if (_firebaseReady || _auth) {
+      // Chama cb imediatamente com cache LOCAL (enquanto aguarda Firestore)
       const cached = LOCAL.get(col);
       if (cached.length > 0) cb(cached);
+
+      // ── Aguarda auth antes de criar listener Firestore ──────
+      _authReady.then(() => {
+        if (!_db) { cb(LOCAL.get(col)); return; }
+      }).catch(() => {});
 
       const unsub = FS.onSnapshot(
         col,
