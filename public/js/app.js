@@ -1,14 +1,14 @@
-// AHA Social Planning — app.js v5.0
+// AHA Social Planning — app.js v5.1 (patches I, II, III aplicados)
 const APP = {
   user:null,
   currentPage: localStorage.getItem('aha_page')||'dashboard',
-  currentAccountId: null, // ID of selected account, null = all accounts
-  contaSelMode: false,       // selection mode for contas page
-  contaSelection: new Set(), // selected account IDs
+  currentAccountId: null,
+  contaSelMode: false,
+  contaSelection: new Set(),
   charts:{}, editingId:null, unsubs:[], agendView:'lista',
-  selection: new Set(), // IDs of selected posts
-  selMode: false, // selection mode toggle
-  postsView: localStorage.getItem('aha_posts_view')||'grade', // grade | lista | calendario
+  selection: new Set(),
+  selMode: false,
+  postsView: localStorage.getItem('aha_posts_view')||'grade',
   kanbanCols: (()=>{
     const COLS_V='v5';
     const DEFAULT=[
@@ -22,7 +22,6 @@ const APP = {
     ];
     try{
       const saved=JSON.parse(localStorage.getItem('aha_kanban_cols')||'null');
-      // Reset if old version (missing review or rejected)
       if(!saved||localStorage.getItem('aha_kanban_v')!==COLS_V||!saved.find(c=>c.id==='review')||!saved.find(c=>c.id==='rejected')){
         localStorage.setItem('aha_kanban_cols',JSON.stringify(DEFAULT));
         localStorage.setItem('aha_kanban_v',COLS_V);
@@ -45,15 +44,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   if (params.get('approval')) { setupApprovalPage(); return; }
 
-  initFirebase(); // Inicia Firebase + login anônimo automático se necessário
+  initFirebase();
 
   AUTH.onAuthChange(fbUser => {
     if (fbUser) {
-      // Usuário com sessão Firebase (email, google ou anônimo)
       if (!fbUser.isAnonymous) {
-        // Login real (email/google) — atualiza perfil do app
         const name = fbUser.displayName ||
-          fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\w/g, c=>c.toUpperCase());
+          fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\w/g, c=>c.toUpperCase());
         APP.user = {
           uid: fbUser.uid,
           email: fbUser.email,
@@ -65,17 +62,12 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('aha_user', JSON.stringify(APP.user));
         showApp();
       } else {
-        // Login anônimo automático — verifica se há usuário salvo no localStorage
         const saved = getSavedUser();
         if (saved) {
           APP.user = saved;
           showApp();
         }
-        // Se não há usuário salvo, aguarda login manual (tela de login já está visível)
       }
-    } else {
-      // Sem sessão nenhuma — tela de login já está visível, aguarda o usuário
-      // (não faz nada — o login anônimo será disparado pelo initFirebase)
     }
   });
 });
@@ -106,10 +98,8 @@ function doLogout(){
 }
 
 function showApp(){
-  // Guard: if already showing app, only refresh user avatar (avoid double init)
   const appEl=el('app');
   if(appEl&&appEl.classList.contains('visible')&&APP._appShown){
-    // Just update avatar in case auth refreshed
     const u2=APP.user;
     setText('topAvatar',u2.avatar||'U');setText('sideAvatar',u2.avatar||'U');setText('sideUserName',u2.name||'Usuário');
     return;
@@ -125,15 +115,14 @@ function showApp(){
     if(!LOCAL.get('posts').length) seed();
   }
 
-  // Restaura conta selecionada
-  const savedAccount=localStorage.getItem('aha_activeAccount');
-  if(savedAccount){
-    APP.currentAccountId=savedAccount;
-    const savedAcc=LOCAL.find('accounts',savedAccount);
-    if(!savedAcc){ APP.currentAccountId=null; localStorage.removeItem('aha_activeAccount'); }
-  }
+  // ── PATCH I ──────────────────────────────────────────────────
+  // Apenas carrega o ID salvo — a validação real (se a conta ainda existe)
+  // acontece no listener de 'accounts', APÓS o primeiro sync do Firestore.
+  // Antes do patch, LOCAL.find() retornava null porque o Firestore ainda não
+  // havia sincronizado, descartando o ID e fazendo os agendamentos sumireм.
+  APP.currentAccountId = localStorage.getItem('aha_activeAccount') || null;
+  // ─────────────────────────────────────────────────────────────
 
-  // Inicia listeners em tempo real (Firestore → LOCAL → render)
   startListeners();
   updateBadges();
   updateAccChip();
@@ -144,8 +133,6 @@ function showApp(){
   history.replaceState({page:initPage},'',`#${initPage}`);
   const navBtn=document.querySelector(`[onclick*="'${initPage}'"]`);
 
-  // Se Firebase disponível, aguarda primeiro sync antes do render inicial
-  // (máx 4s — depois renderiza com cache local para não travar)
   if(_firebaseReady){
     DB.waitForFirstSync(4000).then(()=>{
       showPage(initPage, navBtn, true);
@@ -170,28 +157,44 @@ function seed(){
 function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
 
-  // Posts: re-renderiza qualquer página que dependa de posts
+  // ── PATCH III ─────────────────────────────────────────────────
+  // renderPage ANTES de updateBadges: garante que o DOM do #badge-aprovados
+  // já existe quando updateBadges() tenta manipulá-lo.
+  // Antes do patch, updateBadges() rodava primeiro — em aba anônima o elemento
+  // ainda não estava no DOM e o dot verde nunca aparecia.
   APP.unsubs.push(DB.listen('posts', posts => {
-    updateBadges();
     const postPages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
     if(postPages.includes(APP.currentPage)) renderPage(APP.currentPage);
+    updateBadges();
   }));
+  // ─────────────────────────────────────────────────────────────
 
-  // Contas: re-renderiza contas e badges
+  // ── PATCH I (parte 2) ─────────────────────────────────────────
+  // Valida currentAccountId aqui, após os dados do Firestore chegarem.
+  // Se a conta salva não existe mais (ou nunca existiu neste dispositivo),
+  // reseta para null. Isso evita o caso inverso: mostrar "nenhum post"
+  // porque o accountId está setado para uma conta inexistente.
   APP.unsubs.push(DB.listen('accounts', accounts => {
+    if(APP.currentAccountId){
+      const stillExists = accounts.find(a => a.id === APP.currentAccountId);
+      if(!stillExists){
+        APP.currentAccountId = null;
+        localStorage.removeItem('aha_activeAccount');
+      }
+    }
     updateBadges();
     updateAccChip();
     if(APP.currentPage==='contas') renderContas();
   }));
+  // ─────────────────────────────────────────────────────────────
 
-  // Campanhas: re-renderiza campanhas
   APP.unsubs.push(DB.listen('campaigns', camps => {
     if(APP.currentPage==='campanhas') renderCampanhas();
   }));
 }
 
 // ── Navegação ─────────────────────────────────────────────────
-let _navPushing=false; // guard to avoid double pushState
+let _navPushing=false;
 function showPage(page,btn,fromHistory){
   if(page==='posts-menu'){
     const sub=el('posts-submenu');
@@ -203,7 +206,6 @@ function showPage(page,btn,fromHistory){
   const sec=el('sec-'+page);if(sec)sec.classList.add('active');
   if(btn){btn.classList.add('active');}
   else{
-    // Auto-activate correct nav item
     const navBtn=document.querySelector(`[onclick*="'${page}'"]`);
     if(navBtn)navBtn.classList.add('active');
   }
@@ -213,17 +215,14 @@ function showPage(page,btn,fromHistory){
   const titles={dashboard:'Dashboard',contas:'Contas',agendamentos:'Agendamentos',posts:'Posts',analise:'Em Análise',aprovados:'Aprovados',rejeitados:'Rejeitados',campanhas:'Campanhas',trafego:'Tráfego Pago',workflow:'Workflow',revisao:'Revisão'};
   setText('pageTitle',titles[page]||page);
   if(window.innerWidth<960)el('sidebar').classList.remove('mobile-open');
-  // Push browser history only when user navigates (not from popstate)
   if(!fromHistory&&!_navPushing){
     _navPushing=true;
     history.pushState({page},'',`#${page}`);
     _navPushing=false;
   }
   renderPage(page);
-  // Refresh topbar button states
   setTimeout(()=>updateBadges(),0);
 }
-// Handle browser back/forward
 window.addEventListener('popstate',function(e){
   const page=(e.state&&e.state.page)||location.hash.replace('#','').replace('?approval=','').split('&')[0]||'dashboard';
   if(page&&page!=='posts-menu'){
@@ -245,7 +244,6 @@ function renderPage(page){
 }
 
 // ── Multi-Account helpers ────────────────────────────────────
-// ── Admin check ──────────────────────────────────────────────
 const ADMIN_EMAIL = 'emanaproducoes@gmail.com';
 function isAdmin(){ return APP.user && APP.user.email === ADMIN_EMAIL; }
 
@@ -256,14 +254,12 @@ function getActivePosts(){
 }
 function switchAccount(accountId){
   APP.currentAccountId=accountId;
-  // II: Persist selected account across reload/logout
   if(accountId){localStorage.setItem('aha_activeAccount',accountId);}
   else{localStorage.removeItem('aha_activeAccount');}
   updateAccChip();
   updateBadges();
   renderPage(APP.currentPage);
   closeAccDropdown();
-  // Show filter bar if account selected
   const fb=el('accFilterBar');
   if(fb){
     if(accountId){
@@ -307,7 +303,6 @@ function renderAccDropdown(){
   const bgMap={ig:'radial-gradient(circle at 30% 107%,#fdf497,#fd5949 45%,#d6249f 60%,#285AEB)',fb:'#1877F2',yt:'#FF0000',tt:'#111',li:'#0A66C2',tw:'#1DA1F2'};
   const plat={ig:'Instagram',fb:'Facebook',yt:'YouTube',tt:'TikTok',li:'LinkedIn',tw:'Twitter'};
   let html=`<div class="acc-dropdown-header">Selecionar Conta</div>`;
-  // "All accounts" option
   const isAll=!APP.currentAccountId;
   html+=`<div class="acc-dropdown-item${isAll?' active-account':''}" onclick="switchAccount(null)">
     <div class="adi-avatar" style="background:linear-gradient(135deg,#F97316,#FBBF24);">✦</div>
@@ -334,7 +329,6 @@ function setTopNavActive(page){
     el2.classList.toggle('active',el2.dataset.page===page);
   });
 }
-// Close dropdown on outside click
 document.addEventListener('click',function(e){
   const sw=el('accSwitcher');
   if(sw&&!sw.contains(e.target))closeAccDropdown();
@@ -348,7 +342,6 @@ function updateBadges(){
   setSafe('badge-analise',posts.filter(p=>p.status==='pending').length);
   setSafe('badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
   setSafe('badge-revisao',posts.filter(p=>p.status==='review').length);
-  // Aprovados badge — ponto verde no sidebar
   const aprovCount=posts.filter(p=>p.status==='approved').length;
   const aprovBadge=el('badge-aprovados');
   if(aprovBadge){
@@ -357,7 +350,6 @@ function updateBadges(){
     aprovBadge.style.background='var(--green,#16A34A)';
     aprovBadge.style.color='#fff';
   }
-  // Update topbar nav badges
   setSafe('tbn-badge-contas',accs.length);
   setSafe('tbn-badge-analise',posts.filter(p=>p.status==='pending').length);
   setSafe('tbn-badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
@@ -369,11 +361,8 @@ function updateBadges(){
     apTbn.style.background='var(--green,#16A34A)';
     apTbn.style.color='#fff';
   }
-  // Update acc chip in case accounts changed
   updateAccChip();
-  // Sync topbar nav active state
   setTopNavActive(APP.currentPage);
-  // Update selecionar button state
   const selBtn=el('btn-selecionar');
   if(selBtn){
     const pagesWithSel=['posts','agendamentos','analise','aprovados','rejeitados','revisao'];
@@ -390,7 +379,6 @@ function getFileUrl(p){
   if(p.fileUrl.startsWith('{')){
     try{
       const d=JSON.parse(p.fileUrl);
-      // Remote cloud URL takes priority (cross-device playback)
       if(d.url&&d.url.startsWith('http'))return d.url;
       return d.thumb||d.url||null;
     }catch{}
@@ -402,7 +390,6 @@ function isVideo(p){
   if(p.fileType==='video')return true;
   if(!p.fileUrl)return false;
   if(p.fileUrl.startsWith('data:video')||p.fileUrl.startsWith('data:application/octet'))return true;
-  // JSON ref with type video (cloud upload)
   if(p.fileUrl.startsWith('{')){try{const d=JSON.parse(p.fileUrl);return d.type==='video';}catch{}}
   return false;
 }
@@ -410,26 +397,22 @@ function thumbBg(p){
   const url=getFileUrl(p);
   if(url){
     if(isVideo(p))return`<div style="position:absolute;inset:0;z-index:1;background:#000;display:flex;align-items:center;justify-content:center;font-size:32px;">▶️</div>`;
-    // Use <img> for reliable rendering — works with both URLs and base64
     return`<img src="${url}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;" loading="lazy" onerror="this.style.display='none'"/>`;
   }
   return`<div style="position:absolute;inset:0;z-index:1;display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">${p.thumb||'📷'}</div>`;
 }
-// Carousel thumb: show first slide — uses <img> for reliable base64 rendering
 function carouselThumbBg(p){
   if(!p.slides||!p.slides.length)return thumbBg(p);
   const first=p.slides[0];
   if(first.fileUrl){
     if(first.fileType==='video')
       return`<img src="${first.fileUrl.startsWith('data:video')?'':first.fileUrl}" style="display:none"/><div style="position:absolute;inset:0;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px;">▶️</div>`;
-    // Use <img> not background-image for reliable base64 display
     return`<img src="${first.fileUrl}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;" loading="lazy"/>`;
   }
   return`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;background:linear-gradient(135deg,var(--surface2),var(--surface3));">🎠</div>`;
 }
 
 function thumbInline(p,size=36){
-  // Carousel: show first slide thumbnail
   if(p.type==='carousel'&&p.slides?.length){
     const first=p.slides[0];
     if(first.fileUrl&&first.fileType!=='video'){
@@ -443,13 +426,10 @@ function thumbInline(p,size=36){
 }
 function thumbFull(p){
   const url=getFileUrl(p);
-  // ── Video ──────────────────────────────────────────────────
   if(isVideo(p)){
-    // Remote URL (Firebase Storage) → always playable cross-device
     if(p.fileUrl&&p.fileUrl.startsWith('http')){
       return`<video src="${p.fileUrl}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
     }
-    // IndexedDB key → try load from local IDB, fallback to thumbnail
     if(p.videoKey){
       const divId='vplay_'+p.id+'_'+Date.now();
       setTimeout(async()=>{
@@ -460,7 +440,6 @@ function thumbFull(p){
           const src=URL.createObjectURL(blob);
           div.innerHTML=`<video src="${src}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
         } else if(url){
-          // Thumbnail visible, inform user video is local-only
           div.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;"><span style="font-size:40px;">▶️</span><span style="font-size:11px;font-weight:700;color:#fff;background:rgba(0,0,0,.5);padding:4px 12px;border-radius:20px;">Vídeo disponível apenas no dispositivo original</span></div></div>`;
         } else {
           div.innerHTML=`<div style="height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:36px;gap:8px;background:#111;border-radius:var(--radius);">🎬<div style="font-size:12px;color:#94A3B8;text-align:center;padding:0 16px;">Vídeo salvo localmente<br/>Faça upload via Firebase Storage para compartilhar</div></div>`;
@@ -468,11 +447,9 @@ function thumbFull(p){
       },50);
       return`<div id="${divId}">${url?`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><img src="${url}" style="width:100%;max-height:280px;object-fit:cover;display:block;"/><div style="position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;">▶️</span></div></div>`:`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:48px;background:#111;border-radius:var(--radius);">🎬</div>`}</div>`;
     }
-    // data:video URL in fileUrl
     if(url)return`<video src="${url}" controls style="width:100%;max-height:280px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;
     return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:#111;border-radius:var(--radius);">🎬</div>`;
   }
-  // ── Image ─────────────────────────────────────────────────
   if(url)return`<img src="${url}" style="width:100%;max-height:280px;object-fit:contain;border-radius:var(--radius);background:var(--surface2);display:block;" loading="lazy"/>`;
   return`<div style="height:140px;display:flex;align-items:center;justify-content:center;font-size:64px;background:var(--surface2);border-radius:var(--radius);">${p.thumb||'📷'}</div>`;
 }
@@ -503,9 +480,7 @@ function initCharts(){
 function mkC(id,type,data,options={}){const c=el(id);if(!c)return;APP.charts[id]=new Chart(c,{type,data,options:{responsive:true,maintainAspectRatio:false,...options}});}
 
 // ── Grid de posts ─────────────────────────────────────────────
-// ── Toolbar de seleção (dropdown) ─────────────────────────────
 function selToolbarHTML(){
-  // Show "Selecionar" button when not in selMode
   if(!APP.selMode) return `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-sm btn-secondary" onclick="toggleSelMode()" style="gap:6px;"><svg viewBox='0 0 16 16' width='13' height='13' fill='currentColor'><rect x='1' y='1' width='5' height='5' rx='1'/><rect x='10' y='1' width='5' height='5' rx='1'/><rect x='1' y='10' width='5' height='5' rx='1'/><rect x='10' y='10' width='5' height='5' rx='1'/></svg> Selecionar</button></div>`;
   if(!APP.selection.size) return `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="btn btn-sm btn-secondary" onclick="toggleSelMode()" style="gap:6px;"><svg viewBox='0 0 16 16' width='13' height='13' fill='currentColor'><rect x='1' y='1' width='5' height='5' rx='1'/><rect x='10' y='1' width='5' height='5' rx='1'/><rect x='1' y='10' width='5' height='5' rx='1'/><rect x='10' y='10' width='5' height='5' rx='1'/></svg> Selecionar</button></div>`;
   const n=APP.selection.size;
@@ -524,7 +499,6 @@ function selToolbarHTML(){
           <div onclick="selChangeStatus('approved');closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--green);transition:background .12s;" onmouseover="this.style.background='var(--green-bg)'" onmouseout="this.style.background=''">✅ Aprovar todos</div>
           <div onclick="selChangeStatus('review');closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--purple);transition:background .12s;" onmouseover="this.style.background='var(--purple-bg)'" onmouseout="this.style.background=''">👁 Enviar para Revisão</div>
           <div onclick="selChangeStatus('pending');closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--yellow);transition:background .12s;" onmouseover="this.style.background='var(--yellow-bg)'" onmouseout="this.style.background=''">⏳ Em Análise</div>
-          <div onclick="selChangeStatus('approved');closeSelMenu()" style="display:none"></div>
           <div onclick="selChangeStatus('rejected');closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--red);transition:background .12s;" onmouseover="this.style.background='var(--red-bg)'" onmouseout="this.style.background=''">❌ Rejeitar todos</div>
           <div onclick="selShareAll();closeSelMenu()" style="padding:11px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--blue);transition:background .12s;" onmouseover="this.style.background='var(--blue-bg)'" onmouseout="this.style.background=''">📤 Compartilhar selecionados</div>
           <div style="height:1px;background:var(--border);margin:4px 0;"></div>
@@ -550,7 +524,6 @@ function selAll(){
 
 function renderGrid(cid,posts){
   const g=el(cid);if(!g)return;
-  // Note: container divs like revisao-grid already have cards-grid class
   if(!posts.length){g.innerHTML=emptyS('📭','Nenhum post aqui','Crie um novo agendamento.');return;}
   g.innerHTML=posts.map(p=>postCard(p)).join('');
 }
@@ -561,7 +534,6 @@ function renderPostsPage(){
   const posts=getActivePosts();
   const view=APP.postsView||'grade';
 
-  // View toggle buttons
   const toggleBar=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
     <div style="display:flex;align-items:center;gap:8px;">
       <span style="font-size:13px;font-weight:600;color:var(--text3);">${posts.length} post${posts.length!==1?'s':''}</span>
@@ -640,7 +612,6 @@ function postCard(p){
   return`<div class="post-card${isSel?' post-card-selected':''}" onclick="postCardClick(event,'${p.id}')">
     <div class="post-card-thumb">
       ${p.type==='carousel'&&p.slides?.length?carouselThumbBg(p):thumbBg(p)}
-      <!-- Selection checkbox — visible only in selMode -->
       <span onclick="event.stopPropagation();toggleSelect('${p.id}')" style="position:absolute;top:7px;left:7px;z-index:3;width:22px;height:22px;border-radius:6px;background:${isSel?'var(--primary)':'rgba(255,255,255,.85)'};border:2px solid ${isSel?'var(--primary)':'rgba(255,255,255,.6)'};display:${APP.selMode?'flex':'none'};align-items:center;justify-content:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.2);font-size:12px;">${isSel?'✓':''}</span>
       <span class="si ${PSI[p.platform]||''}" style="position:absolute;top:7px;right:7px;z-index:2;width:22px;height:22px;font-size:9px;">${PSH[p.platform]||'?'}</span>
       <span class="badge ${SB[p.status]||'badge-gray'}" style="position:absolute;bottom:6px;right:6px;z-index:2;font-size:9px;padding:2px 7px;">${SL[p.status]||p.status}</span>
@@ -699,7 +670,6 @@ function selChangeStatus(ns){
 async function selShareAll(){
   const ids=[...APP.selection];
   if(!ids.length)return;
-  // Build multi-link message
   const links=ids.map(id=>{const p=LOCAL.find('posts',id);if(!p)return null;const link=window.location.origin+window.location.pathname.replace(/\/[^/]*$/,'/')+'?approval='+id;return`• ${p.title}: ${link}`;}).filter(Boolean);
   const msg='Links para aprovação:\n\n'+links.join('\n');
   navigator.clipboard?.writeText(links.map(l=>l.split(': ')[1]).join('\n'))
@@ -716,16 +686,12 @@ function openPostDetail(id){
       window._detailSlides=p.slides;
       window._detailSlideIdx=0;
       thumbEl.innerHTML=`<div style="position:relative;">
-        <!-- Slides -->
         <div id="carousel-preview" style="position:relative;overflow:hidden;border-radius:var(--radius);background:var(--surface2);">
           ${p.slides.map((s,i)=>`<div class="carousel-slide-preview" data-idx="${i}" style="display:${i===0?'block':'none'};">${s.fileUrl?(s.fileType==='video'?`<video src="${s.fileUrl}" controls style="width:100%;max-height:260px;display:block;background:#000;"></video>`:`<img src="${s.fileUrl}" style="width:100%;max-height:260px;object-fit:contain;display:block;"/>`):`<div style="height:200px;display:flex;align-items:center;justify-content:center;font-size:56px;">${s.thumb||'🖼️'}</div>`}</div>`).join('')}
-          <!-- Prev/Next arrows -->
           <button onclick="detailCarouselNav(-1)" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);transition:background .15s;" onmouseover="this.style.background='rgba(0,0,0,.8)'" onmouseout="this.style.background='rgba(0,0,0,.55)'">‹</button>
           <button onclick="detailCarouselNav(1)" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;backdrop-filter:blur(4px);transition:background .15s;" onmouseover="this.style.background='rgba(0,0,0,.8)'" onmouseout="this.style.background='rgba(0,0,0,.55)'">›</button>
-          <!-- Counter badge -->
           <div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;backdrop-filter:blur(4px);"><span id="carousel-current">1</span>/${p.slides.length}</div>
         </div>
-        <!-- Dot indicators -->
         <div style="display:flex;justify-content:center;gap:6px;margin-top:10px;">
           ${p.slides.map((_,i)=>`<div onclick="showCarouselSlide(${i})" style="width:${i===0?10:7}px;height:${i===0?10:7}px;border-radius:50%;background:${i===0?'var(--primary)':'var(--border2)'};cursor:pointer;transition:all .2s;" id="dot-${i}"></div>`).join('')}
         </div>
@@ -738,7 +704,6 @@ function openPostDetail(id){
   setText('detail-type',p.type||'—');setText('detail-caption',p.caption||'Sem legenda.');
   const stEl=el('detail-status');if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
   const tagsEl=el('detail-tags');if(tagsEl)tagsEl.innerHTML=p.tags?p.tags.split(',').filter(Boolean).map(t=>`<span class="badge badge-gray" style="margin:2px;">#${esc(t.trim())}</span>`).join(''):'—';
-  // FIX II: show client comment in post detail
   const commentBox=el('detail-client-comment');
   if(commentBox){
     if(p.clientComment&&p.clientComment.trim()){
@@ -773,14 +738,13 @@ function detailCarouselNav(dir){
   showCarouselSlide((window._detailSlideIdx||0)+dir);
 }
 
-// ── KANBAN WORKFLOW — Drag & Drop ─────────────────────────────
+// ── KANBAN WORKFLOW ───────────────────────────────────────────
 let _dragId=null,_dragCol=null;
 function saveKanbanCols(){localStorage.setItem('aha_kanban_cols',JSON.stringify(APP.kanbanCols));}
 
 function renderKanban(){
   const board=el('kanban-board');if(!board)return;
   const posts=getActivePosts();
-  // Map each post to a column based on status
   const grouped={};
   APP.kanbanCols.forEach(c=>grouped[c.id]=[]);
   posts.forEach(p=>{
@@ -865,7 +829,6 @@ function kanbanDrop(e,targetColId){
   const newStatus=targetCol.status||targetColId;
   DB.update('posts',postId,{status:newStatus}).catch(()=>{});
   updateBadges();
-  // Som de click
   try{const ctx=new(window.AudioContext||window.webkitAudioContext)();const o=ctx.createOscillator();const g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.type='sine';o.frequency.value=800;g.gain.setValueAtTime(0.2,ctx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.12);o.start();o.stop(ctx.currentTime+0.12);}catch{}
   toast(`✅ "${post?.title||''}" → ${targetCol.label}`,'success');
   setTimeout(()=>renderKanban(),80);
@@ -951,7 +914,7 @@ function renderAgendList(posts){
   </tr>`).join('');
 }
 
-// ── CALENDÁRIO — estilo Hootsuite com miniaturas ──────────────
+// ── CALENDÁRIO ────────────────────────────────────────────────
 let _calYear=null,_calMonth=null;
 
 function renderCalendar(cid,posts,yr,mo){
@@ -1058,7 +1021,6 @@ function onDragOver(e){e.preventDefault();e.currentTarget.classList.add('drag-ov
 function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
 async function onDrop(e,previewId,dataId){e.preventDefault();e.stopPropagation();e.currentTarget.classList.remove('drag-over');const f=e.dataTransfer?.files[0];if(f)await processFile(f,previewId,dataId);}
 async function onFileChange(inputId,previewId,dataId){const input=el(inputId);if(!input||!input.files[0])return;await processFile(input.files[0],previewId,dataId);input.value='';}
-// ── Helper: store video in IndexedDB (local device only) ─────
 async function _processVideoLocal(file,thumb,prev,dataEl){
   const objUrl=URL.createObjectURL(file);
   const vKey='vid_'+Date.now();
@@ -1069,7 +1031,6 @@ async function _processVideoLocal(file,thumb,prev,dataEl){
   toast(`✅ Vídeo "${file.name}" pronto (local)!`,'success');
 }
 
-// ── IndexedDB for large video storage ────────────────────────
 const VDB={
   db:null,
   open(){
@@ -1106,10 +1067,8 @@ async function processFile(file,previewId,dataId){
   if(!isImg&&!isVid){toast('Formato não suportado. Use PNG, JPG, MP4, MOV.','warning');return;}
   const prev=el(previewId),dataEl=el(dataId);
 
-  // ── Spinner inicial ─────────────────────────────────────────
   if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:12px;color:var(--text3);font-weight:600;">${isVid?'🎬 Processando vídeo...':'📸 Comprimindo imagem...'}</div></div>`;
 
-  // ── Helper: checar se Storage está funcional (timeout 4s) ───
   async function storageOk(){
     if(!_firebaseReady||!_storage)return false;
     try{
@@ -1123,52 +1082,32 @@ async function processFile(file,previewId,dataId){
 
   try{
     if(isImg){
-      // 1. Comprime sempre
       const compressed=await compressImage(file);
-
-      // 2. Tenta Storage (com timeout de 5s) — sem travar se offline
-      const useStorage=await Promise.race([
-        storageOk(),
-        new Promise(r=>setTimeout(()=>r(false),5000))
-      ]);
-
+      const useStorage=await Promise.race([storageOk(),new Promise(r=>setTimeout(()=>r(false),5000))]);
       if(useStorage){
         try{
           if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:130px;gap:8px;background:var(--surface2);border-radius:var(--radius);"><div class="upload-spinner"></div><div style="font-size:11px;color:var(--text3);font-weight:600;">☁️ Enviando imagem...</div></div>`;
           const imgPath=`images/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
           const uploadTask=_storage.ref(imgPath).putString(compressed,'data_url');
-          const snap=await Promise.race([
-            uploadTask,
-            new Promise((_,r)=>setTimeout(()=>r(new Error('upload timeout')),15000))
-          ]);
+          const snap=await Promise.race([uploadTask,new Promise((_,r)=>setTimeout(()=>r(new Error('upload timeout')),15000))]);
           const cloudUrl=await snap.ref.getDownloadURL();
           if(dataEl)dataEl.value=cloudUrl;
           if(prev)prev.innerHTML=`<img src="${cloudUrl}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
           toast('✅ Imagem carregada!','success');
           return;
-        }catch(e){
-          console.warn('Storage falhou, usando base64:',e.message);
-        }
+        }catch(e){console.warn('Storage falhou, usando base64:',e.message);}
       }
-
-      // 3. Fallback base64 (sempre funciona)
       if(dataEl)dataEl.value=compressed;
       if(prev)prev.innerHTML=`<img src="${compressed}" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius);display:block;"/>`;
       toast('✅ Imagem carregada!','success');
-
     } else {
-      // ── VÍDEO ──────────────────────────────────────────────
       if(file.size>100*1024*1024){
         toast('⚠️ Vídeo maior que 100MB.','warning');
         if(prev)prev.innerHTML=`<div class="upload-zone-icon">☁️</div><div class="upload-zone-text">Arquivo muito grande (máx. 100MB)</div>`;
         return;
       }
       const thumb=await videoThumbnail(file);
-      const useStorage=await Promise.race([
-        storageOk(),
-        new Promise(r=>setTimeout(()=>r(false),5000))
-      ]);
-
+      const useStorage=await Promise.race([storageOk(),new Promise(r=>setTimeout(()=>r(false),5000))]);
       if(useStorage){
         try{
           if(prev)prev.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:140px;gap:10px;background:var(--surface2);border-radius:var(--radius);padding:16px;"><div class="upload-spinner"></div><div style="font-size:12px;font-weight:700;color:var(--text3);">☁️ Enviando vídeo... <span id="vid-pct">0</span>%</div><div style="width:100%;height:6px;background:var(--border);border-radius:4px;overflow:hidden;margin-top:4px;"><div id="vid-bar" style="height:100%;width:0%;background:var(--primary);border-radius:4px;transition:width .3s;"></div></div><div style="font-size:11px;color:var(--text4);">${(file.size/1024/1024).toFixed(1)}MB</div></div>`;
@@ -1186,11 +1125,8 @@ async function processFile(file,previewId,dataId){
           if(prev)prev.innerHTML=`<div style="position:relative;border-radius:var(--radius);overflow:hidden;"><video src="${cloudUrl}" controls style="width:100%;height:160px;background:#000;display:block;" preload="metadata"></video><div style="padding:8px;background:var(--surface2);font-size:11px;color:var(--text3);">☁️ ${file.name} · ${(file.size/1024/1024).toFixed(1)}MB <span style="color:#16A34A;font-weight:700;">✅ Cloud</span></div></div>`;
           toast(`✅ Vídeo "${file.name}" enviado ao cloud!`,'success');
           return;
-        }catch(e){
-          console.warn('Storage falhou, usando IndexedDB:',e.message);
-        }
+        }catch(e){console.warn('Storage falhou, usando IndexedDB:',e.message);}
       }
-      // Fallback IndexedDB local
       await _processVideoLocal(file,thumb,prev,dataEl);
     }
   }catch(e){
@@ -1242,7 +1178,6 @@ function renderCarouselSlots(){
   </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">`;
 
-  // Show existing slides
   for(let i=0;i<_carouselSlides.length;i++){
     const s=_carouselSlides[i];
     const isVid=s.fileType==='video'||(s.fileUrl&&s.fileUrl.startsWith('data:video'));
@@ -1262,7 +1197,6 @@ function renderCarouselSlots(){
     </div>`;
   }
 
-  // Show empty slots
   for(let i=_carouselSlides.length;i<maxSlides;i++){
     html+=`<label style="height:110px;border:2px dashed var(--border2);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:4px;transition:all .15s;" onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--primary-light)'" onmouseout="this.style.borderColor='var(--border2)';this.style.background=''">
       <span style="font-size:20px;">➕</span>
@@ -1323,7 +1257,7 @@ function moveCarouselSlide(idx,dir){
 // ── Modal Agendamento ─────────────────────────────────────────
 function openNewAgendamento(){
   APP.editingId=null;
-  APP._saving=false; // always reset — prevents stuck flag from previous session
+  APP._saving=false;
   ['ag-title','ag-date','ag-caption','ag-tags'].forEach(id=>sv(id,''));
   sv('ag-platform','ig');sv('ag-status','pending');sv('ag-campaign','');
   const prev=el('ag-file-preview');
@@ -1335,7 +1269,7 @@ function openNewAgendamento(){
 function openPostEditor(id){
   const p=LOCAL.find('posts',id);if(!p)return;
   APP.editingId=id;
-  APP._saving=false; // always reset
+  APP._saving=false;
   sv('ag-title',p.title||'');sv('ag-platform',p.platform||'ig');sv('ag-date',p.date||'');
   sv('ag-campaign',p.campaign||'');sv('ag-caption',p.caption||'');sv('ag-tags',p.tags||'');sv('ag-status',p.status||'pending');
   document.querySelectorAll('.tipo-btn').forEach(b=>{b.classList.remove('active');b.style.cssText='';if(b.dataset.tipo===(p.type||'image')){b.classList.add('active');b.style.cssText='border-color:var(--primary);background:var(--primary-light);color:var(--primary);';}});
@@ -1345,7 +1279,6 @@ function openPostEditor(id){
   if(prev&&p.type!=='carousel'){
     if(isVideo(p)){
       if(p.videoKey){
-        // Load from IndexedDB for preview
         VDB.load(p.videoKey).then(blob=>{
           if(blob){const src=URL.createObjectURL(blob);prev.innerHTML=`<video src="${src}" controls style="width:100%;height:160px;background:#000;border-radius:var(--radius);display:block;" preload="metadata"></video>`;}
           else if(url){prev.innerHTML=`<div style="position:relative;"><img src="${url}" style="width:100%;height:120px;object-fit:cover;border-radius:var(--radius);"/><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);border-radius:var(--radius);">▶️</div></div>`;}
@@ -1373,7 +1306,6 @@ function toggleCarouselSection(tipo){
   if(tipo==='carousel'){
     if(cs)cs.style.display='block';
     if(fs)fs.style.display='none';
-    // Render slots every time carousel is shown
     renderCarouselSlots();
   } else {
     if(cs)cs.style.display='none';
@@ -1401,14 +1333,12 @@ async function saveAgendamento(){
       try{
         const fd=JSON.parse(fileRaw);
         if(fd.vKey){
-          // Video stored in IndexedDB (local only)
           fileUrl=fd.thumb||null;
           fileType='video';
           videoKey=fd.vKey;
           videoName=fd.name||'video.mp4';
           videoType=fd.type||'video/mp4';
         } else if(fd.url&&fd.url.startsWith('http')){
-          // Video stored in Firebase Storage (cross-device)
           fileUrl=fd.url;
           fileType='video';
           videoName=fd.name||'video.mp4';
@@ -1427,7 +1357,8 @@ async function saveAgendamento(){
     const orig=LOCAL.find('posts',editingId);
     if(orig){fileUrl=orig.fileUrl;fileType=orig.fileType;videoKey=orig.videoKey||null;videoName=orig.videoName||null;videoType=orig.videoType||null;}
   }
-  const data={accountId:APP.currentAccountId||null,
+  const data={
+    accountId:APP.currentAccountId||null,
     title,platform,
     date:v('ag-date')||'',
     campaign:v('ag-campaign')?.trim()||'',
@@ -1439,10 +1370,8 @@ async function saveAgendamento(){
     slides:tipo==='carousel'?[..._carouselSlides]:undefined,
   };
   if(videoKey){data.videoKey=videoKey;data.videoName=videoName;data.videoType=videoType;}
-  // Close modal FIRST — always, regardless of what happens next
   closeModal('modalAgendamento');
 
-  // Helper: wrap Firebase with 8s timeout so it never hangs
   const safeDB=(promise)=>Promise.race([
     promise,
     new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),8000))
@@ -1455,14 +1384,8 @@ async function saveAgendamento(){
       toast('Post atualizado! ✅','success');
       APP.editingId=null;
     } else {
-      // CREATE: single path
-      // If Firebase ready: FS.add → onSnapshot updates LOCAL (no manual LOCAL touch)
-      // If Firebase offline: DB.add falls back to LOCAL.add internally
       try{ await safeDB(DB.add('posts',data)); }
-      catch(e){
-        // Timeout or Firebase error: ensure data is in LOCAL
-        console.warn('DB.add:',e.message);
-      }
+      catch(e){console.warn('DB.add:',e.message);}
       toast('Agendamento criado! 🗓️','success');
     }
   }catch(err){
@@ -1500,7 +1423,6 @@ function openShareModal(id){
   const base=window.location.origin+'/';
   const link=base+'?approval='+id;
   sv('share-link-input',link);
-  // Thumbnail preview in modal
   const thumbDiv=el('share-thumb-preview');
   if(thumbDiv){
     const thumbUrl=p.type==='carousel'&&p.slides?.length?p.slides[0].fileUrl:getFileUrl(p);
@@ -1512,7 +1434,6 @@ function openShareModal(id){
     } else {
       thumbDiv.innerHTML=`<div style="height:100px;background:var(--surface2);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:40px;">${p.thumb||'📷'}</div>`;
     }
-    // Title & status overlay
     thumbDiv.innerHTML+=`<div style="margin-top:8px;"><div style="font-size:13px;font-weight:800;color:var(--text);">${esc(p.title)}</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px;"><span class="badge ${SB[p.status]||'badge-gray'}" style="font-size:10px;">${SL[p.status]||p.status}</span><span class="si ${PSI[p.platform]||''}" style="width:16px;height:16px;font-size:7px;">${PSH[p.platform]||'?'}</span><span style="font-size:11px;color:var(--text3);">${p.date||''}</span></div></div>`;
   }
   el('share-wa').href=`https://wa.me/?text=${encodeURIComponent('Olá! Segue o criativo para sua aprovação:\n\n*'+p.title+'*\n\nAcesse o link abaixo para visualizar e aprovar:\n'+link+'\n\nAguardo seu retorno! 🙏')}`;
@@ -1522,7 +1443,7 @@ function openShareModal(id){
 function copyLink(){const val=v('share-link-input');if(!val)return;navigator.clipboard?.writeText(val).then(()=>toast('Link copiado! 📋','success'));}
 function openApprovalTab(){const link=v('share-link-input');if(link)window.open(link,'_blank','noopener');}
 
-// ── PÁGINA DE APROVAÇÃO — sem redirecionar para login ─────────
+// ── APROVAÇÃO ─────────────────────────────────────────────────
 function setupApprovalPage(){
   const id=new URLSearchParams(window.location.search).get('approval');
   if(!id)return;
@@ -1531,7 +1452,6 @@ function setupApprovalPage(){
     const ap2=el('app');if(ap2)ap2.style.display='none';
     const ap=el('approvalPage');if(ap){ap.style.display='block';}
   };
-  // Run as soon as DOM is ready
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded',()=>{hideAll();loadApprovalPost(id);});
   } else {
@@ -1548,16 +1468,13 @@ async function loadApprovalPost(id){
   };
   showSpinner('Carregando criativo...');
 
-  // Helper: timeout wrapper
   const withTimeout=(promise,ms,fallback=null)=>Promise.race([promise,new Promise(r=>setTimeout(()=>r(fallback),ms))]);
 
-  // 1. Wait for Firebase SDK (max 5s)
   await withTimeout(new Promise(resolve=>{
     if(typeof firebase!=='undefined'){resolve();return;}
     const t=setInterval(()=>{if(typeof firebase!=='undefined'){clearInterval(t);resolve();}},150);
   }),5000);
 
-  // 2. Init + anonymous sign-in (all in one go, max 4s)
   try{
     initFirebase();
     if(_firebaseReady&&_auth&&!_auth.currentUser){
@@ -1565,11 +1482,9 @@ async function loadApprovalPost(id){
     }
   }catch(e){}
 
-  // 3. Fetch — try Firestore directly (allow read:if true), fallback localStorage
   let p=null;
   if(_firebaseReady&&_db){
     try{
-      // Direct Firestore REST — bypasses auth issues entirely
       const snap=await withTimeout(_db.collection('posts').doc(id).get(),8000);
       if(snap&&snap.exists) p={id:snap.id,...snap.data()};
     }catch(e){console.warn('Firestore fetch:',e.message);}
@@ -1608,10 +1523,8 @@ async function loadApprovalPost(id){
   const stEl=el('ap-status');
   if(stEl){stEl.className='badge '+(SB[p.status]||'badge-gray');stEl.textContent=SL[p.status]||p.status;}
 
-  // Restaura comentário anterior
   if(p.clientComment){const ce=el('ap-comment');if(ce)ce.value=p.clientComment;}
 
-  // Preenche workflow selector — use APP.kanbanCols or default cols
   const wfSel=el('ap-workflow-select');
   if(wfSel){
     const cols=APP.kanbanCols&&APP.kanbanCols.length?APP.kanbanCols:[
@@ -1627,14 +1540,12 @@ async function loadApprovalPost(id){
       cols.map(c=>`<option value="${c.id}" ${(p.status===c.id||p.status===c.status)?'selected':''}>${c.icon} ${c.label}</option>`).join('');
   }
 
-  // Histórico da última ação
   const prevDiv=el('ap-prev-action');
   if(prevDiv){
     if(p.reviewAction&&p.reviewedAt){
       const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};
       prevDiv.style.display='block';
       prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong style="color:var(--text)">${msgs[p.reviewAction]||p.reviewAction}</strong> em ${new Date(p.reviewedAt).toLocaleString('pt-BR')}</div>`;
-      // Buttons remain active — client can change decision
     }else{prevDiv.style.display='none';}
   }
   if(p.status!=='pending'&&p.status!=='draft'){showApprovalResult(p.status);}
@@ -1667,7 +1578,6 @@ async function approvalAction(action){
 
   const updateData={status:finalStatus,clientComment:comment,reviewedAt:new Date().toISOString(),reviewAction:action,clientWorkflow:workflowId};
 
-  // FIX III: save locally AND Firebase, triggers real-time listener in app
   LOCAL.update('posts',id,updateData);
   try{
     await DB.update('posts',id,updateData);
@@ -1679,7 +1589,6 @@ async function approvalAction(action){
   showApprovalResult(finalStatus);
   const prevDiv=el('ap-prev-action');
   if(prevDiv){const msgs={approve:'✅ Aprovado',reject:'❌ Rejeitado',correct:'⚠️ Correção solicitada'};prevDiv.style.display='block';prevDiv.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text3);">Última ação: <strong>${msgs[action]}</strong> em ${new Date().toLocaleString('pt-BR')}</div>`;}
-  // Do NOT disable buttons — client must be able to change action
 }
 
 async function saveApprovalComment(){
@@ -1703,12 +1612,10 @@ async function saveApprovalComment(){
 // ── Contas ────────────────────────────────────────────────────
 function renderContas(){
   const accounts=LOCAL.get('accounts'),grid=el('accountsGrid');if(!grid)return;
-  // Update selection toolbar
   const delBtn=el('btn-del-contas'),selBtn=el('btn-sel-contas'),countEl=el('conta-sel-count');
   if(selBtn){selBtn.style.background=APP.contaSelMode?'var(--primary)':'';selBtn.style.color=APP.contaSelMode?'#fff':'';selBtn.style.borderColor=APP.contaSelMode?'var(--primary)':'';}
   if(delBtn){delBtn.style.display=APP.contaSelMode&&APP.contaSelection.size>0&&isAdmin()?'flex':'none';}
   if(countEl)countEl.textContent=APP.contaSelection.size;
-  // Controle admin: mostrar/esconder botões de gestão de contas
   const novaContaBtn=el('btn-nova-conta');if(novaContaBtn)novaContaBtn.style.display=isAdmin()?'':'none';
   if(selBtn)selBtn.style.display=isAdmin()?'':'none';
   if(!accounts.length){grid.innerHTML=emptyS('🔗','Nenhuma conta','Clique em "+ Nova Conta".');return;}
@@ -1722,28 +1629,15 @@ function renderContas(){
     return `<div class="account-card" style="position:relative;${selStyle}cursor:${selMode?'default':'pointer'};" ${clickCard}>${cbHtml}<div class="account-card-head"><div class="account-avatar" style="background:${bgMap[acc.platform]||'#888'};color:#fff;font-size:14px;font-weight:800;">${PSH[acc.platform]||'?'}</div><div class="account-info"><div class="account-name">${esc(acc.name)}</div><div class="account-handle">${esc(acc.handle)}</div></div><span class="badge ${acc.status==='active'?'badge-green':'badge-gray'}">${acc.status==='active'?'Ativo':'Inativo'}</span></div><div class="account-stats"><div class="account-stat"><div class="account-stat-val">${acc.followers||'0'}</div><div class="account-stat-label">Seguidores</div></div><div class="account-stat"><div class="account-stat-val">${acc.engagement||'—'}</div><div class="account-stat-label">Engajamento</div></div><div class="account-stat"><div class="account-stat-val">${acc.posts||0}</div><div class="account-stat-label">Posts</div></div><div class="account-stat"><div class="account-stat-val">${PL[acc.platform]||acc.platform}</div><div class="account-stat-label">Plataforma</div></div></div>${acc.platform==='ig'?`<div style="padding:10px 20px;border-top:1px solid var(--border);">${acc.igConnected?`<div style="font-size:12px;color:var(--green);font-weight:600;">✅ Instagram conectado</div>`:`<button class="btn btn-sm btn-primary" style="width:100%;justify-content:center;" onclick="openModal('modalIgSetup')">🔗 Conectar Instagram via API</button>`}</div>`:''}<div class="account-card-footer"${selMode?' style="pointer-events:none;opacity:.5;"':''}>${isAdmin()?`<button class="btn btn-sm btn-danger" onclick="doRemoveAccount('${acc.id}')">🗑️ Remover</button>`:'<div></div>'}<div style="display:flex;gap:6px;">${isAdmin()?`<button class="btn btn-sm btn-secondary" onclick="editAccount('${acc.id}')">✏️ Editar</button>`:''}<button class="btn btn-sm btn-primary" onclick="doSyncAccount('${acc.id}')">🔄 Sync</button></div></div></div>`;
   }).join('');
 }
-function toggleContaSelMode(){
-  APP.contaSelMode=!APP.contaSelMode;
-  APP.contaSelection.clear();
-  renderContas();
-}
-function toggleContaSel(id,e){
-  if(e){e.stopPropagation();}
-  if(APP.contaSelection.has(id)){APP.contaSelection.delete(id);}else{APP.contaSelection.add(id);}
-  renderContas();
-}
+function toggleContaSelMode(){APP.contaSelMode=!APP.contaSelMode;APP.contaSelection.clear();renderContas();}
+function toggleContaSel(id,e){if(e){e.stopPropagation();}if(APP.contaSelection.has(id)){APP.contaSelection.delete(id);}else{APP.contaSelection.add(id);}renderContas();}
 async function deleteSelectedContas(){
   const ids=[...APP.contaSelection];
   if(!ids.length)return;
   if(!confirm(`Remover ${ids.length} conta(s) selecionada(s)? Esta ação não pode ser desfeita.`))return;
-  for(const id of ids){
-    DB.remove('accounts',id).catch(()=>{});
-  }
-  APP.contaSelection.clear();
-  APP.contaSelMode=false;
-  updateBadges();
-  renderContas();
-  toast(`🗑️ ${ids.length} conta(s) removida(s).`,'success');
+  for(const id of ids){DB.remove('accounts',id).catch(()=>{});}
+  APP.contaSelection.clear();APP.contaSelMode=false;
+  updateBadges();renderContas();toast(`🗑️ ${ids.length} conta(s) removida(s).`,'success');
 }
 async function doSyncAccount(id){const a=LOCAL.find('accounts',id);if(!a)return;toast('Sincronizando...','info');await new Promise(r=>setTimeout(r,1200));const upd={posts:(a.posts||0)+Math.floor(Math.random()*5)+1};LOCAL.update('accounts',id,upd);DB.update('accounts',id,upd);renderContas();toast(a.name+' sincronizado! ✅','success');}
 async function doRemoveAccount(id){if(!isAdmin()){toast('🔒 Apenas o administrador pode remover contas.','error');return;}const a=LOCAL.find('accounts',id);if(!a||!confirm('Remover "'+a.name+'"?'))return;DB.remove('accounts',id);updateBadges();renderContas();toast('Conta removida.','info');}
@@ -1757,10 +1651,9 @@ async function saveAccount(){
   if(APP.editingId){
     LOCAL.update('accounts',APP.editingId,data);
     DB.update('accounts',APP.editingId,data).catch(()=>{});
-    toast('Conta atualizada! ✅','success');
-    APP.editingId=null;
+    toast('Conta atualizada! ✅','success');APP.editingId=null;
   } else {
-    await DB.add('accounts',data); // II: DB.add gerencia LOCAL+Firebase sem duplicar
+    await DB.add('accounts',data);
     toast('Conta conectada! 🔗','success');
   }
   updateBadges();renderContas();
@@ -1776,17 +1669,7 @@ function renderCampanhas(){
 }
 function editCampaign(id){const c=LOCAL.find('campaigns',id);if(!c)return;APP.editingId=id;sv('camp-name',c.name);sv('camp-start',c.start);sv('camp-end',c.end);sv('camp-budget',c.budget);sv('camp-desc',c.desc||'');document.querySelectorAll('.camp-plat-check').forEach(cb=>cb.checked=false);(c.platforms||'').split(',').forEach(pl=>{const cb=document.querySelector('.camp-plat-check[value="'+pl+'"]');if(cb)cb.checked=true;});setText('modalCampanhaTitulo','✏️ Editar Campanha');openModal('modalCampanha');}
 function openNewCampanha(){APP.editingId=null;['camp-name','camp-start','camp-end','camp-budget','camp-desc'].forEach(id=>sv(id,''));document.querySelectorAll('.camp-plat-check').forEach(c=>c.checked=false);setText('modalCampanhaTitulo','📋 Nova Campanha');openModal('modalCampanha');}
-async function saveCampanha(){const name=v('camp-name')?.trim();if(!name){toast('Informe o nome.','warning');return;}const plats=[...document.querySelectorAll('.camp-plat-check:checked')].map(x=>x.value).join(',')||'ig';const data={name,start:v('camp-start'),end:v('camp-end'),budget:v('camp-budget')?.trim(),desc:v('camp-desc')?.trim(),platforms:plats,status:'active',posts:0,approved:0,pending:0,rejected:0};closeModal('modalCampanha');if(APP.editingId){
-    LOCAL.update('campaigns',APP.editingId,data);
-    DB.update('campaigns',APP.editingId,data).catch(()=>{});
-    toast('Campanha atualizada! ✅','success');
-    APP.editingId=null;
-  }else{
-    // DB.add gerencia LOCAL+Firebase sem duplicar
-    DB.add('campaigns',data).catch(()=>{}); // async, onSnapshot will update LOCAL
-    toast('Campanha criada! 🚀','success');
-  }
-  renderCampanhas();}
+async function saveCampanha(){const name=v('camp-name')?.trim();if(!name){toast('Informe o nome.','warning');return;}const plats=[...document.querySelectorAll('.camp-plat-check:checked')].map(x=>x.value).join(',')||'ig';const data={name,start:v('camp-start'),end:v('camp-end'),budget:v('camp-budget')?.trim(),desc:v('camp-desc')?.trim(),platforms:plats,status:'active',posts:0,approved:0,pending:0,rejected:0};closeModal('modalCampanha');if(APP.editingId){LOCAL.update('campaigns',APP.editingId,data);DB.update('campaigns',APP.editingId,data).catch(()=>{});toast('Campanha atualizada! ✅','success');APP.editingId=null;}else{DB.add('campaigns',data).catch(()=>{});toast('Campanha criada! 🚀','success');}renderCampanhas();}
 function doToggleCamp(id,cur){const ns=cur==='active'?'paused':'active';LOCAL.update('campaigns',id,{status:ns});DB.update('campaigns',id,{status:ns});renderCampanhas();toast('Campanha '+(ns==='active'?'ativada ▶':'pausada ⏸'),'info');}
 function doDeleteCamp(id){const c=LOCAL.find('campaigns',id);if(!c||!confirm('Excluir "'+c.name+'"?'))return;DB.remove('campaigns',id);renderCampanhas();toast('Campanha excluída.','info');}
 function exportCampReport(id){const c=LOCAL.find('campaigns',id);if(!c)return;const prog=c.posts?Math.round((c.approved/c.posts)*100):0;const txt=`RELATÓRIO — AHA Social Planning\n${'='.repeat(50)}\nCampanha: ${c.name}\nStatus: ${c.status}\nPeríodo: ${c.start||'—'} → ${c.end||'—'}\nBudget: ${c.budget||'—'}\nPosts: ${c.posts} | Aprovados: ${c.approved} | Pendentes: ${c.pending} | Rejeitados: ${c.rejected}\nTaxa: ${prog}%\n\nGerado: ${new Date().toLocaleString('pt-BR')}\nAHA Social Planning © 2026`;dlText(txt,c.name.replace(/\s+/g,'_')+'_relatorio.txt');toast('Relatório exportado! 📊','success');}
@@ -1804,7 +1687,6 @@ function openModal(id){const e=el(id);if(e){e.classList.add('open');document.bod
 function closeModal(id){
   if(id){
     const e=el(id);if(e)e.classList.remove('open');
-    // Reset editingId only when closing the agendamento modal (not post detail)
     if(id==='modalAgendamento')APP.editingId=null;
   } else {
     document.querySelectorAll('.modal-overlay.open').forEach(m=>m.classList.remove('open'));
