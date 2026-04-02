@@ -79,9 +79,9 @@ input,textarea,select{font-family:var(--font);}
 /* ══ LOGIN PAGE ══ */
 #loginPage{display:none;position:fixed;inset:0;z-index:9000;overflow:hidden;}
 #loginPage.visible{display:flex!important;}
-.login-left{width:55%;position:relative;overflow:hidden;display:flex;flex-direction:column;flex-shrink:0;}
-.login-right{width:45%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;padding:48px;overflow-y:auto;}
-.login-banner-img{width:100%;height:100%;object-fit:cover;object-position:center;position:absolute;inset:0;display:block;}
+.login-left{width:65%;position:relative;overflow:hidden;display:flex;flex-direction:column;flex-shrink:0;}
+.login-right{width:35%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;padding:36px 32px;overflow-y:auto;}
+.login-banner-img{width:100%;height:100%;object-fit:contain;object-position:center center;position:absolute;inset:0;display:block;background:#F97316;}
 .banner-content{position:absolute;right:4%;bottom:80px;width:46%;z-index:5;text-align:right;}
 .banner-tagline{font-family:var(--font);font-size:18px;font-weight:800;color:#fff;line-height:1.35;margin-bottom:8px;text-shadow:0 2px 10px rgba(0,0,0,.2);}
 .banner-tagline em{font-style:normal;color:#FBBF24;}
@@ -130,6 +130,7 @@ input,textarea,select{font-family:var(--font);}
 .nav-badge{margin-left:auto;background:var(--primary);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;min-width:18px;text-align:center;}
 .nav-badge.yellow{background:var(--yellow);}
 .nav-badge.red{background:var(--red);}
+.nav-badge.green{background:#16A34A;}
 .sidebar-divider{height:1px;background:rgba(255,255,255,.06);margin:8px 0;}
 .sidebar-bottom{padding:14px 16px;flex-shrink:0;}
 .sidebar-user{display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,.05);border-radius:var(--radius-sm);margin-bottom:8px;cursor:pointer;transition:background .15s;}
