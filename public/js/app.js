@@ -44,15 +44,38 @@ const TEMO= {image:'📸',video:'🎬',story:'📱',reel:'🎵',carousel:'🎠'}
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   if (params.get('approval')) { setupApprovalPage(); return; }
-  initFirebase();
+
+  initFirebase(); // Inicia Firebase + login anônimo automático se necessário
+
   AUTH.onAuthChange(fbUser => {
     if (fbUser) {
-      const name=fbUser.displayName||fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-      APP.user={uid:fbUser.uid,email:fbUser.email,name,avatar:name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),photo:fbUser.photoURL,role:'Gerente de Conteúdo'};
-      localStorage.setItem('aha_user',JSON.stringify(APP.user));showApp();
+      // Usuário com sessão Firebase (email, google ou anônimo)
+      if (!fbUser.isAnonymous) {
+        // Login real (email/google) — atualiza perfil do app
+        const name = fbUser.displayName ||
+          fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\w/g, c=>c.toUpperCase());
+        APP.user = {
+          uid: fbUser.uid,
+          email: fbUser.email,
+          name,
+          avatar: name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),
+          photo: fbUser.photoURL,
+          role: 'Gerente de Conteúdo'
+        };
+        localStorage.setItem('aha_user', JSON.stringify(APP.user));
+        showApp();
+      } else {
+        // Login anônimo automático — verifica se há usuário salvo no localStorage
+        const saved = getSavedUser();
+        if (saved) {
+          APP.user = saved;
+          showApp();
+        }
+        // Se não há usuário salvo, aguarda login manual (tela de login já está visível)
+      }
     } else {
-      const saved=getSavedUser();
-      if(saved){APP.user=saved;showApp();}
+      // Sem sessão nenhuma — tela de login já está visível, aguarda o usuário
+      // (não faz nada — o login anônimo será disparado pelo initFirebase)
     }
   });
 });
