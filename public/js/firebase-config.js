@@ -371,21 +371,33 @@ const DB = {
   },
 
   // ── listen: escuta em tempo real o Firestore ─────────────────
-  // - Aguarda auth estar pronta antes de criar o listener Firestore
-  // - onSnapshot atualiza LOCAL e chama cb(docs) automaticamente
-  // - Migra automaticamente itens loc_ para Firestore
+  // REGRA CRÍTICA: o onSnapshot SÓ é iniciado APÓS _authReady resolver.
+  // Isso garante que request.auth != null quando o Firestore verifica as regras.
+  // Sem isso, o snapshot falha com permission-denied em abas anônimas/novas.
   listen(col, cb) {
     if (!this._syncing[col]) this._syncing[col] = new Set();
 
-    if (_firebaseReady || _auth) {
-      // Chama cb imediatamente com cache LOCAL (enquanto aguarda Firestore)
-      const cached = LOCAL.get(col);
-      if (cached.length > 0) cb(cached);
+    // Chama cb imediatamente com cache LOCAL (UI responsiva enquanto aguarda)
+    cb(LOCAL.get(col));
 
-      // ── Aguarda auth antes de criar listener Firestore ──────
-      _authReady.then(() => {
-        if (!_db) { cb(LOCAL.get(col)); return; }
-      }).catch(() => {});
+    // Modo sem Firebase: polling no localStorage
+    if (!_db && !_auth) {
+      console.warn(`[AHA] ⚠️ Modo offline puro — ${col} usa localStorage`);
+      const t = setInterval(() => cb(LOCAL.get(col)), 2000);
+      return () => clearInterval(t);
+    }
+
+    // Variáveis de controle do listener assíncrono
+    let _unsubFirestore = null;
+    let _cancelled = false;
+
+    // ── Aguarda auth PRONTA antes de abrir o onSnapshot ──────────
+    // Isso é o ponto crítico: sem auth, Firestore nega acesso.
+    _authReady.then(authOk => {
+      if (_cancelled) return;
+      if (!_db) { cb(LOCAL.get(col)); return; }
+
+      console.log(`[AHA] 🔓 Auth pronta (${authOk?'OK':'falhou'}), iniciando listener: ${col}`);
 
       const unsub = FS.onSnapshot(
         col,
@@ -435,15 +447,18 @@ const DB = {
         }
       );
 
+      _unsubFirestore = unsub;
       this._listeners[col] = unsub;
-      return unsub;
-    }
+    }).catch(e => {
+      console.error(`[AHA] ❌ _authReady falhou para ${col}:`, e.message);
+      cb(LOCAL.get(col));
+    });
 
-    // ── Modo completamente offline ────────────────────────────
-    console.warn(`[AHA] ⚠️ Modo offline — ${col} usa apenas localStorage`);
-    cb(LOCAL.get(col));
-    const t = setInterval(() => cb(LOCAL.get(col)), 2000);
-    return () => clearInterval(t);
+    // Retorna função de cleanup que cancela o listener quando o app se desconectar
+    return () => {
+      _cancelled = true;
+      if (_unsubFirestore) { _unsubFirestore(); _unsubFirestore = null; }
+    };
   },
 
   // ── Aguarda primeiro sync de todas as coleções ────────────
