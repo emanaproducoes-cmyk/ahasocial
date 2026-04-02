@@ -97,32 +97,41 @@ function showApp(){
   const u=APP.user;
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
-  if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — dados não sincronizam entre dispositivos.','warning'),1500);
-  if(_firebaseReady){DB.init().then(ok=>{ if(ok) console.log('🔥 Firestore sync ativo'); });}
-  if(!_firebaseReady && !LOCAL.get('posts').length)seed();
-  // II: Restore persisted account selection
+  if(!_firebaseReady){
+    setTimeout(()=>toast('⚠️ Sem conexão com Firebase — dados ficam apenas neste dispositivo.','error'),1200);
+    if(!LOCAL.get('posts').length) seed();
+  }
+
+  // Restaura conta selecionada
   const savedAccount=localStorage.getItem('aha_activeAccount');
   if(savedAccount){
     APP.currentAccountId=savedAccount;
     const savedAcc=LOCAL.find('accounts',savedAccount);
-    if(!savedAcc){
-      // Account was deleted - clear saved selection
-      APP.currentAccountId=null;
-      localStorage.removeItem('aha_activeAccount');
-    }
+    if(!savedAcc){ APP.currentAccountId=null; localStorage.removeItem('aha_activeAccount'); }
   }
+
+  // Inicia listeners em tempo real (Firestore → LOCAL → render)
   startListeners();
   updateBadges();
   updateAccChip();
-  // Restore last visited page (no flash, no delay needed)
+
   const savedPage=localStorage.getItem('aha_page')||'dashboard';
-  // Set initial history state from hash or saved page
   const hashPage=location.hash.replace('#','').split('&')[0]||savedPage;
   const initPage=(hashPage&&hashPage!=='posts-menu')?hashPage:savedPage;
   history.replaceState({page:initPage},'',`#${initPage}`);
   const navBtn=document.querySelector(`[onclick*="'${initPage}'"]`);
-  showPage(initPage, navBtn, true);
-  if(!APP._badgeInterval)APP._badgeInterval=setInterval(()=>updateBadges(),5000);
+
+  // Se Firebase disponível, aguarda primeiro sync antes do render inicial
+  // (máx 4s — depois renderiza com cache local para não travar)
+  if(_firebaseReady){
+    DB.waitForFirstSync(4000).then(()=>{
+      showPage(initPage, navBtn, true);
+    });
+  } else {
+    showPage(initPage, navBtn, true);
+  }
+
+  if(!APP._badgeInterval) APP._badgeInterval=setInterval(()=>updateBadges(),5000);
 }
 
 function seed(){
@@ -137,13 +146,25 @@ function seed(){
 
 function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
-  APP.unsubs.push(DB.listen('posts',posts=>{
+
+  // Posts: re-renderiza qualquer página que dependa de posts
+  APP.unsubs.push(DB.listen('posts', posts => {
     updateBadges();
-    const pages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
-    if(pages.includes(APP.currentPage)) renderPage(APP.currentPage);
+    const postPages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
+    if(postPages.includes(APP.currentPage)) renderPage(APP.currentPage);
   }));
-  APP.unsubs.push(DB.listen('accounts',accounts=>{updateBadges();if(APP.currentPage==='contas')renderContas();}));
-  APP.unsubs.push(DB.listen('campaigns',camps=>{if(APP.currentPage==='campanhas')renderCampanhas();}));
+
+  // Contas: re-renderiza contas e badges
+  APP.unsubs.push(DB.listen('accounts', accounts => {
+    updateBadges();
+    updateAccChip();
+    if(APP.currentPage==='contas') renderContas();
+  }));
+
+  // Campanhas: re-renderiza campanhas
+  APP.unsubs.push(DB.listen('campaigns', camps => {
+    if(APP.currentPage==='campanhas') renderCampanhas();
+  }));
 }
 
 // ── Navegação ─────────────────────────────────────────────────
@@ -619,7 +640,6 @@ async function selDeleteAll(){
   const count=APP.selection.size;
   if(!confirm(`Excluir ${count} post${count>1?'s':''}?`))return;
   for(const id of APP.selection){
-    LOCAL.remove('posts',id);
     DB.remove('posts',id).catch(()=>{});
   }
   APP.selection.clear();
@@ -631,7 +651,6 @@ function selChangeStatus(ns){
   const ids=[...APP.selection];
   if(!ids.length)return;
   ids.forEach(id=>{
-    LOCAL.update('posts',id,{status:ns});
     DB.update('posts',id,{status:ns}).catch(()=>{});
   });
   APP.selection.clear();
@@ -807,7 +826,6 @@ function kanbanDrop(e,targetColId){
   if(!targetCol)return;
   const post=LOCAL.find('posts',postId);
   const newStatus=targetCol.status||targetColId;
-  LOCAL.update('posts',postId,{status:newStatus});
   DB.update('posts',postId,{status:newStatus}).catch(()=>{});
   updateBadges();
   // Som de click
@@ -1395,7 +1413,6 @@ async function saveAgendamento(){
 
   try{
     if(editingId){
-      LOCAL.update('posts',editingId,data); // instant local update
       try{await safeDB(DB.update('posts',editingId,data));}
       catch(e){console.warn('Firebase update failed:',e.message);}
       toast('Post atualizado! ✅','success');
@@ -1407,7 +1424,6 @@ async function saveAgendamento(){
       try{ await safeDB(DB.add('posts',data)); }
       catch(e){
         // Timeout or Firebase error: ensure data is in LOCAL
-        if(!_firebaseReady) LOCAL.add('posts',data);
         console.warn('DB.add:',e.message);
       }
       toast('Agendamento criado! 🗓️','success');
@@ -1425,13 +1441,11 @@ async function saveAgendamento(){
 async function saveDraft(){if(APP._saving)return;const t=v('ag-title')?.trim()||'Rascunho '+new Date().toLocaleDateString('pt-BR');sv('ag-title',t);sv('ag-status','draft');await saveAgendamento();}
 async function doDeletePost(id){
   const p=LOCAL.find('posts',id);if(!p||!confirm('Excluir "'+p.title+'"?'))return;
-  LOCAL.remove('posts',id);
   DB.remove('posts',id).catch(()=>{});
   updateBadges();toast('Post excluído.','info');
   if(APP.currentPage==='agendamentos')applyAgendView(APP.agendView);else renderPage(APP.currentPage);
 }
 function doChangeStatus(id,ns){
-  LOCAL.update('posts',id,{status:ns});
   DB.update('posts',id,{status:ns}).catch(()=>{});
   updateBadges();closeModal('modalPostDetail');
   toast('Post '+({approved:'Aprovado! ✅',rejected:'Rejeitado ❌',pending:'Enviado para análise ⏳',review:'Em revisão 👁️'}[ns]||ns),ns==='approved'?'success':ns==='rejected'?'error':'info');
@@ -1440,7 +1454,7 @@ function doChangeStatus(id,ns){
 }
 function updateCampaignCounts(){
   const posts=LOCAL.get('posts');
-  LOCAL.get('campaigns').forEach(c=>{const cp=posts.filter(p=>p.campaign===c.name);const upd={posts:cp.length,approved:cp.filter(p=>p.status==='approved').length,pending:cp.filter(p=>p.status==='pending').length,rejected:cp.filter(p=>p.status==='rejected').length};LOCAL.update('campaigns',c.id,upd);DB.update('campaigns',c.id,upd);});
+  LOCAL.get('campaigns').forEach(c=>{const cp=posts.filter(p=>p.campaign===c.name);const upd={posts:cp.length,approved:cp.filter(p=>p.status==='approved').length,pending:cp.filter(p=>p.status==='pending').length,rejected:cp.filter(p=>p.status==='rejected').length};DB.update('campaigns',c.id,upd);});
 }
 
 // ── Share ─────────────────────────────────────────────────────
@@ -1683,7 +1697,6 @@ async function deleteSelectedContas(){
   if(!ids.length)return;
   if(!confirm(`Remover ${ids.length} conta(s) selecionada(s)? Esta ação não pode ser desfeita.`))return;
   for(const id of ids){
-    LOCAL.remove('accounts',id);
     DB.remove('accounts',id).catch(()=>{});
   }
   APP.contaSelection.clear();
@@ -1693,7 +1706,7 @@ async function deleteSelectedContas(){
   toast(`🗑️ ${ids.length} conta(s) removida(s).`,'success');
 }
 async function doSyncAccount(id){const a=LOCAL.find('accounts',id);if(!a)return;toast('Sincronizando...','info');await new Promise(r=>setTimeout(r,1200));const upd={posts:(a.posts||0)+Math.floor(Math.random()*5)+1};LOCAL.update('accounts',id,upd);DB.update('accounts',id,upd);renderContas();toast(a.name+' sincronizado! ✅','success');}
-async function doRemoveAccount(id){const a=LOCAL.find('accounts',id);if(!a||!confirm('Remover "'+a.name+'"?'))return;LOCAL.remove('accounts',id);DB.remove('accounts',id);updateBadges();renderContas();toast('Conta removida.','info');}
+async function doRemoveAccount(id){const a=LOCAL.find('accounts',id);if(!a||!confirm('Remover "'+a.name+'"?'))return;DB.remove('accounts',id);updateBadges();renderContas();toast('Conta removida.','info');}
 function editAccount(id){const a=LOCAL.find('accounts',id);if(!a)return;APP.editingId=id;sv('acc-platform',a.platform);sv('acc-handle',a.handle.replace('@',''));sv('acc-name',a.name);sv('acc-followers',a.followersNum||0);sv('acc-engagement',a.engagement||'');setText('modalContaTitle','✏️ Editar Conta');openModal('modalConta');}
 function openNewConta(){APP.editingId=null;['acc-handle','acc-name','acc-followers','acc-engagement'].forEach(id=>sv(id,''));sv('acc-platform','ig');setText('modalContaTitle','🔗 Conectar Nova Conta');openModal('modalConta');}
 async function saveAccount(){
@@ -1735,7 +1748,7 @@ async function saveCampanha(){const name=v('camp-name')?.trim();if(!name){toast(
   }
   renderCampanhas();}
 function doToggleCamp(id,cur){const ns=cur==='active'?'paused':'active';LOCAL.update('campaigns',id,{status:ns});DB.update('campaigns',id,{status:ns});renderCampanhas();toast('Campanha '+(ns==='active'?'ativada ▶':'pausada ⏸'),'info');}
-function doDeleteCamp(id){const c=LOCAL.find('campaigns',id);if(!c||!confirm('Excluir "'+c.name+'"?'))return;LOCAL.remove('campaigns',id);DB.remove('campaigns',id);renderCampanhas();toast('Campanha excluída.','info');}
+function doDeleteCamp(id){const c=LOCAL.find('campaigns',id);if(!c||!confirm('Excluir "'+c.name+'"?'))return;DB.remove('campaigns',id);renderCampanhas();toast('Campanha excluída.','info');}
 function exportCampReport(id){const c=LOCAL.find('campaigns',id);if(!c)return;const prog=c.posts?Math.round((c.approved/c.posts)*100):0;const txt=`RELATÓRIO — AHA Social Planning\n${'='.repeat(50)}\nCampanha: ${c.name}\nStatus: ${c.status}\nPeríodo: ${c.start||'—'} → ${c.end||'—'}\nBudget: ${c.budget||'—'}\nPosts: ${c.posts} | Aprovados: ${c.approved} | Pendentes: ${c.pending} | Rejeitados: ${c.rejected}\nTaxa: ${prog}%\n\nGerado: ${new Date().toLocaleString('pt-BR')}\nAHA Social Planning © 2026`;dlText(txt,c.name.replace(/\s+/g,'_')+'_relatorio.txt');toast('Relatório exportado! 📊','success');}
 
 // ── Tráfego ───────────────────────────────────────────────────
