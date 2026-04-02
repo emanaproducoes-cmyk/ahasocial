@@ -97,8 +97,9 @@ function showApp(){
   const u=APP.user;
   setText('topAvatar',u.avatar||'U');setText('sideAvatar',u.avatar||'U');setText('sideUserName',u.name||'Usuário');
   if(u.photo){['topAvatar','sideAvatar'].forEach(id=>{const e=el(id);if(e){e.style.backgroundImage=`url(${u.photo})`;e.style.backgroundSize='cover';e.textContent='';e.title=u.name;}});}
-  if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — configure Firebase para multi-usuário.','warning'),1500);
-  if(!_firebaseReady && !LOCAL.get('posts').length)seed(); // V: só seed em modo offline
+  if(!_firebaseReady)setTimeout(()=>toast('⚠️ Modo local — dados não sincronizam entre dispositivos.','warning'),1500);
+  if(_firebaseReady){DB.init().then(ok=>{ if(ok) console.log('🔥 Firestore sync ativo'); });}
+  if(!_firebaseReady && !LOCAL.get('posts').length)seed();
   // II: Restore persisted account selection
   const savedAccount=localStorage.getItem('aha_activeAccount');
   if(savedAccount){
