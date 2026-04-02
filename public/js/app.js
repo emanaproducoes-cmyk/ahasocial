@@ -143,43 +143,23 @@ function showApp(){
     localStorage.removeItem('aha_activeAccountUser');
   }
 
-  // Inicia listeners em tempo real (Firestore → LOCAL → render)
-  startListeners();
-  updateBadges();
-  updateAccChip();
-
-  // Valida a conta restaurada após Firestore sincronizar (conta pode ter sido excluída)
-  if(APP.currentAccountId){
-    DB.waitForFirstSync(5000).then(()=>{
-      const acc=LOCAL.find('accounts',APP.currentAccountId);
-      if(!acc){
-        // Conta não existe mais: reset para "Todas as Contas"
-        APP.currentAccountId=null;
-        localStorage.removeItem('aha_activeAccount');
-        localStorage.removeItem('aha_activeAccountUser');
-        updateAccChip();
-        updateBadges();
-        renderPage(APP.currentPage);
-      }
-    });
-  }
-
+  // Determina página inicial
   const savedPage=localStorage.getItem('aha_page')||'dashboard';
   const hashPage=location.hash.replace('#','').split('&')[0]||savedPage;
   const initPage=(hashPage&&hashPage!=='posts-menu')?hashPage:savedPage;
   history.replaceState({page:initPage},'',`#${initPage}`);
   const navBtn=document.querySelector(`[onclick*="'${initPage}'"]`);
 
-  // Se Firebase disponível, aguarda primeiro sync antes do render inicial
-  // (máx 4s — depois renderiza com cache local para não travar)
-  if(_firebaseReady){
-    DB.waitForFirstSync(4000).then(()=>{
-      showPage(initPage, navBtn, true);
-    });
-  } else {
-    showPage(initPage, navBtn, true);
-  }
+  // Mostra a página IMEDIATAMENTE (pode estar vazia para novos usuários)
+  // Os listeners do Firestore chamam renderPage() quando os dados chegarem
+  showPage(initPage, navBtn, true);
 
+  // Inicia listeners em tempo real (Firestore → LOCAL → re-render automático)
+  startListeners();
+  updateBadges();
+  updateAccChip();
+
+  // Intervalo de segurança: atualiza badges a cada 5s
   if(!APP._badgeInterval) APP._badgeInterval=setInterval(()=>updateBadges(),5000);
 }
 
@@ -196,21 +176,36 @@ function seed(){
 function startListeners(){
   APP.unsubs.forEach(u=>{try{u();}catch{}});APP.unsubs=[];
 
-  // Posts: re-renderiza qualquer página que dependa de posts
+  // Posts — re-renderiza SEMPRE que dados chegarem do Firestore
+  // Isso garante que usuários novos vejam os dados quando o Firestore sincronizar
   APP.unsubs.push(DB.listen('posts', posts => {
     updateBadges();
+    // Renderiza a página atual independente de qual for (dados chegaram do Firestore)
     const postPages=['posts','analise','aprovados','rejeitados','agendamentos','dashboard','workflow','revisao'];
-    if(postPages.includes(APP.currentPage)) renderPage(APP.currentPage);
+    if(postPages.includes(APP.currentPage)){
+      renderPage(APP.currentPage);
+    }
   }));
 
-  // Contas: re-renderiza contas e badges
+  // Contas
   APP.unsubs.push(DB.listen('accounts', accounts => {
     updateBadges();
     updateAccChip();
+    // Valida conta selecionada: se foi excluída, volta para "Todas as Contas"
+    if(APP.currentAccountId){
+      const acc=LOCAL.find('accounts',APP.currentAccountId);
+      if(!acc){
+        APP.currentAccountId=null;
+        localStorage.removeItem('aha_activeAccount');
+        localStorage.removeItem('aha_activeAccountUser');
+        updateAccChip();
+      }
+    }
     if(APP.currentPage==='contas') renderContas();
+    else updateBadges();
   }));
 
-  // Campanhas: re-renderiza campanhas
+  // Campanhas
   APP.unsubs.push(DB.listen('campaigns', camps => {
     if(APP.currentPage==='campanhas') renderCampanhas();
   }));
