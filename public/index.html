@@ -36,6 +36,7 @@
 <style>
 /* ── I. Login banner fix ─────────────────── */
 .login-banner-img{object-fit:contain!important;object-position:center center!important;background:#F97316!important;}
+.nav-badge.green{background:#16A34A!important;color:#fff!important;}
 .login-left{background:#F97316;}
 
 /* ── II. Logo fixes ──────────────────────── */
@@ -467,7 +468,7 @@
           <button class="btn btn-danger" id="btn-del-contas" onclick="deleteSelectedContas()" style="display:none;gap:6px;">
             🗑️ Remover Selecionadas (<span id="conta-sel-count">0</span>)
           </button>
-          <button class="btn btn-primary" onclick="openNewConta()">+ Nova Conta</button>
+          <button class="btn btn-primary" id="btn-nova-conta" onclick="openNewConta()">+ Nova Conta</button>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;" id="accountsGrid"></div>
