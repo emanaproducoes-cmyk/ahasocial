@@ -86,12 +86,25 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('aha_user', JSON.stringify(APP.user));
         showApp();
       } else {
-        // Anônimo: verifica localStorage
+        // ── FIX I: Aba anônima ──────────────────────────────────────
+        // Usa dados do localStorage se existir; caso contrário cria um
+        // usuário anônimo temporário para que o app seja exibido e os
+        // listeners do Firestore (que aguardam _authReady) possam iniciar.
         const saved = getSavedUser();
         if (saved) {
           APP.user = saved;
-          showApp();
+        } else {
+          // Sem credenciais salvas: exibe app como visitante anônimo.
+          // Os dados são carregados do Firestore via DB.listen após auth.
+          APP.user = {
+            uid: fbUser.uid,
+            email: '',
+            name: 'Visitante',
+            avatar: '?',
+            role: 'Visualizador'
+          };
         }
+        showApp();
       }
     }
   });
@@ -417,23 +430,38 @@ function updateBadges(){
   setSafe('badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
   setSafe('badge-revisao',posts.filter(p=>p.status==='review').length);
   const aprovCount=posts.filter(p=>p.status==='approved').length;
+
+  // ── FIX III: badge aprovados — mostra dot verde mesmo com count 0 ──
+  // Antes: display:none quando count=0 → badge sumia completamente.
+  // Agora: sempre visível com cor verde; sem número quando vazio.
   const aprovBadge=el('badge-aprovados');
   if(aprovBadge){
-    aprovBadge.textContent=aprovCount>0?aprovCount:'';
-    aprovBadge.style.display=aprovCount>0?'inline-block':'none';
-    aprovBadge.style.background='var(--green,#16A34A)';
-    aprovBadge.style.color='#fff';
+    aprovBadge.textContent = aprovCount > 0 ? String(aprovCount) : '';
+    aprovBadge.style.cssText = [
+      'display:inline-flex',
+      'align-items:center',
+      'justify-content:center',
+      'min-width:' + (aprovCount > 0 ? '18px' : '10px'),
+      'height:' + (aprovCount > 0 ? '18px' : '10px'),
+      'padding:' + (aprovCount > 0 ? '0 5px' : '0'),
+      'border-radius:9px',
+      'background:#16A34A',
+      'color:#fff',
+      'font-size:9px',
+      'font-weight:800',
+    ].join(';');
   }
+
   setSafe('tbn-badge-contas',accs.length);
   setSafe('tbn-badge-analise',posts.filter(p=>p.status==='pending').length);
   setSafe('tbn-badge-rejeitados',posts.filter(p=>p.status==='rejected').length);
   setSafe('tbn-badge-revisao',posts.filter(p=>p.status==='review').length);
   const apTbn=el('tbn-badge-aprovados');
   if(apTbn){
-    apTbn.textContent=aprovCount>0?aprovCount:'';
-    apTbn.style.display=aprovCount>0?'inline-block':'none';
-    apTbn.style.background='var(--green,#16A34A)';
-    apTbn.style.color='#fff';
+    apTbn.textContent = aprovCount > 0 ? String(aprovCount) : '';
+    apTbn.style.cssText = aprovCount > 0
+      ? 'display:inline-flex;align-items:center;justify-content:center;background:#16A34A;color:#fff;border-radius:8px;padding:0 5px;font-size:9px;font-weight:800;'
+      : 'display:none;';
   }
   updateAccChip();
   setTopNavActive(APP.currentPage);
@@ -1123,6 +1151,8 @@ async function doRemoveAccount(id){if(!isAdmin()){toast('🔒 Apenas o administr
 function editAccount(id){if(!isAdmin()){toast('🔒 Apenas o administrador pode editar contas.','error');return;}const a=LOCAL.find('accounts',id);if(!a)return;APP.editingId=id;sv('acc-platform',a.platform);sv('acc-handle',a.handle.replace('@',''));sv('acc-name',a.name);sv('acc-followers',a.followersNum||0);sv('acc-engagement',a.engagement||'');setText('modalContaTitle','✏️ Editar Conta');openModal('modalConta');}
 function openNewConta(){if(!isAdmin()){toast('🔒 Apenas o administrador pode cadastrar contas.','error');return;}APP.editingId=null;['acc-handle','acc-name','acc-followers','acc-engagement'].forEach(id=>sv(id,''));sv('acc-platform','ig');setText('modalContaTitle','🔗 Conectar Nova Conta');openModal('modalConta');}
 async function saveAccount(){
+  // ── FIX II: dupla proteção — bloqueia saveAccount para não-admin ──
+  if(!isAdmin()){toast('🔒 Apenas o administrador pode cadastrar/editar contas.','error');closeModal('modalConta');return;}
   const platform=v('acc-platform'),handle=v('acc-handle')?.trim();const name=v('acc-name')?.trim()||('AHA '+(PL[platform]||platform));const followersN=parseInt(v('acc-followers'))||0,engagement=v('acc-engagement')?.trim()||'0%';
   if(!platform||!handle){toast('Preencha plataforma e @usuário.','warning');return;}
   const data={name,handle:handle.startsWith('@')?handle:'@'+handle,platform,followers:followersN>=1000?(followersN/1000).toFixed(1)+'K':String(followersN),followersNum:followersN,engagement,posts:0,status:'active',igConnected:false};
