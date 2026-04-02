@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
   AUTH.onAuthChange(fbUser => {
     if (fbUser) {
       if (!fbUser.isAnonymous) {
+        // Usuario autenticado real (email ou Google)
         const name = fbUser.displayName ||
           fbUser.email.split('@')[0].replace(/[._]/g,' ').replace(/\w/g, c=>c.toUpperCase());
         APP.user = {
@@ -86,25 +87,17 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('aha_user', JSON.stringify(APP.user));
         showApp();
       } else {
-        // ── FIX I: Aba anônima ──────────────────────────────────────
-        // Usa dados do localStorage se existir; caso contrário cria um
-        // usuário anônimo temporário para que o app seja exibido e os
-        // listeners do Firestore (que aguardam _authReady) possam iniciar.
+        // FIX I: Usuario anonimo do Firebase (signInAnonymously automatico)
+        // So entra no app se ja havia feito login antes (saved com email).
+        // Sem sessao previa -> mantem tela de login visivel.
+        // _authReady ja resolveu, entao quando o usuario fizer login os
+        // listeners do Firestore ja terao auth pronta e carregam dados.
         const saved = getSavedUser();
-        if (saved) {
+        if (saved && saved.email) {
           APP.user = saved;
-        } else {
-          // Sem credenciais salvas: exibe app como visitante anônimo.
-          // Os dados são carregados do Firestore via DB.listen após auth.
-          APP.user = {
-            uid: fbUser.uid,
-            email: '',
-            name: 'Visitante',
-            avatar: '?',
-            role: 'Visualizador'
-          };
+          showApp();
         }
-        showApp();
+        // else: sem sessao previa, nao chama showApp() - mostra login
       }
     }
   });
