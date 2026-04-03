@@ -1,4 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/public/js/app.js b/public/js/app.js
 index 7d1c36d5f7c7a9ab9941c3048b399d107d9ced17..7af257b75cf0e89d1121458eb63f5a5fd3b0ac92 100644
 --- a/public/js/app.js
@@ -1291,6 +1290,4 @@ index 7d1c36d5f7c7a9ab9941c3048b399d107d9ced17..7af257b75cf0e89d1121458eb63f5a5f
 +const esc=(s)=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 +const emptyS=(icon,t,s)=>`<div class="empty-state"><div class="empty-state-icon">${icon}</div><div class="empty-state-title">${t}</div><div class="empty-state-sub">${s}</div></div>`;
 +const dlText=(txt,fn)=>{const a=document.createElement('a');a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(txt);a.download=fn;a.click();};
- 
-EOF
-)
+
